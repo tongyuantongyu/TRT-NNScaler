@@ -37,6 +37,7 @@ struct pad_descriptor {
 class pixel_exporter_cpu_crop {
   std::unique_ptr<float[]> buffer{};
   std::unique_ptr<float[]> buffer_alpha{};
+  shape_t<3> current_buffer_shape;
   size_t max_size;
 
  public:
@@ -82,14 +83,15 @@ std::string pixel_importer_cpu::import_color(md_view<float, 3> dst,
                                              md_uview<const U, 3> src,
                                              cudaStream_t stream,
                                              float quant) {
-  if (dst.shape.slice<1, 2>() != src.shape.template slice<0, 2>()) {
-    return "dimension mismatch";
+  auto [h, w, c] = src.shape;
+  auto [dc, dh, dw] = dst.shape;
+
+  if (dh * dw > max_size) {
+    return "dimension too big";
   }
 
-  auto [h, w, c] = src.shape;
-
-  if (h * w > max_size) {
-    return "dimension too big";
+  if (h > dh || w > dw) {
+    return "incompatible dimension";
   }
 
   if (quant == 0.0) {
@@ -97,6 +99,7 @@ std::string pixel_importer_cpu::import_color(md_view<float, 3> dst,
   }
 
   md_view<float, 3> tmp{buffer.get(), dst.shape};
+  md_view<float, 2> tmp_alpha{buffer_alpha.get(), {h, w}};
 
   if (c == 3) {
     for (size_t y = 0; y < h; ++y) {
@@ -118,7 +121,6 @@ std::string pixel_importer_cpu::import_color(md_view<float, 3> dst,
       }
     }
     else {
-      md_view<float, 2> tmp_alpha{buffer_alpha.get(), {h, w}};
       for (size_t y = 0; y < h; ++y) {
         for (size_t x = 0; x < w; ++x) {
           tmp.at(0, y, x) = static_cast<float>(src.at(y, x, 2)) * quant;
@@ -131,6 +133,39 @@ std::string pixel_importer_cpu::import_color(md_view<float, 3> dst,
   }
   else {
     assert(false);
+  }
+
+  for (size_t y = h; y < dh; ++y) {
+    for (size_t x = 0; x < w; ++x) {
+      tmp.at(0, y, x) = tmp.at(0, h - 1, x);
+      tmp.at(1, y, x) = tmp.at(1, h - 1, x);
+      tmp.at(2, y, x) = tmp.at(2, h - 1, x);
+      if (c == 4 && buffer_alpha) {
+        tmp_alpha.at(y, x) = tmp_alpha.at(h - 1, x);
+      }
+    }
+  }
+
+  for (size_t y = 0; y < h; ++y) {
+    for (size_t x = w; x < dw; ++x) {
+      tmp.at(0, y, x) = tmp.at(0, y, w - 1);
+      tmp.at(1, y, x) = tmp.at(1, y, w - 1);
+      tmp.at(2, y, x) = tmp.at(2, y, w - 1);
+      if (c == 4 && buffer_alpha) {
+        tmp_alpha.at(y, x) = tmp_alpha.at(y, w - 1);
+      }
+    }
+  }
+
+  for (size_t y = h; y < dh; ++y) {
+    for (size_t x = w; x < dw; ++x) {
+      tmp.at(0, y, x) = tmp.at(0, h - 1, w - 1);
+      tmp.at(1, y, x) = tmp.at(1, h - 1, w - 1);
+      tmp.at(2, y, x) = tmp.at(2, h - 1, w - 1);
+      if (c == 4 && buffer_alpha) {
+        tmp_alpha.at(y, x) = tmp_alpha.at(h - 1, w - 1);
+      }
+    }
   }
 
   auto err = cudaMemcpyAsync(dst.data, tmp.data, dst.size() * 4, cudaMemcpyHostToDevice, stream);
@@ -148,8 +183,13 @@ std::string pixel_exporter_cpu_crop::export_data(md_uview<U, 3> dst, pad_descrip
   }
 
   auto [he, we, c] = dst.shape;
-  md_uview<float, 3> tmp = md_view<float, 3>{buffer.get(), {c, he, we}};
-  md_uview<float, 2> tmp_alpha = md_view<float, 2>{buffer_alpha.get(), {he, we}};
+  auto [_, hs, ws] = current_buffer_shape;
+  if (he > hs || we > ws) {
+    return "incompatible dimension";
+  }
+
+  md_uview<float, 3> tmp = md_view<float, 3>{buffer.get(), current_buffer_shape};
+  md_uview<float, 2> tmp_alpha = md_view<float, 2>{buffer_alpha.get(), current_buffer_shape.slice<1, 2>()};
 
   offset_t shrink = pad.pad / 2;
   offset_t hb = pad.top ? 0 : shrink;

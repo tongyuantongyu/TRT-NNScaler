@@ -30,6 +30,7 @@ std::string pixel_exporter_cpu_crop::fetch_color(md_view<const float, 3> src, cu
     return std::string("CUDA error: ") + cudaGetErrorName(err);
   }
 
+  current_buffer_shape = src.shape;
   return "";
 }
 
@@ -38,6 +39,10 @@ std::string pixel_exporter_cpu_crop::fetch_alpha(md_view<const float, 3> src, cu
 
   if (h * w > max_size) {
     return "dimension too big";
+  }
+
+  if (current_buffer_shape != src.shape) {
+    return "incompatible color buffer shape";
   }
 
   auto err = cudaMemcpyAsync(buffer_alpha.get(), src.data, h * w * 4, cudaMemcpyDeviceToHost, stream);

@@ -5,7 +5,6 @@
 #include <array>
 #include <memory>
 #include <iostream>
-#include <cmath>
 
 #include "nn-scaler.h"
 #include "reformat/reformat.h"
@@ -178,6 +177,12 @@ DECLARE_int32(tile_width);
 DECLARE_int32(tile_height);
 DECLARE_int32(tile_pad);
 DECLARE_int32(extend_grace);
+DEFINE_int32(alignment, 1, "model input alignment requirement");
+
+static offset_t align(offset_t n, size_t alignment) {
+  n += alignment - 1;
+  return n - (n % alignment);
+}
 
 static void pixel_import_worker(ichan &in, ichan &out) {
   bool nn_alpha = FLAGS_alpha == "nn";
@@ -192,19 +197,23 @@ static void pixel_import_worker(ichan &in, ichan &out) {
 
     auto [h, w, c] = ctx.in_image.shape;
     auto process_alpha = nn_alpha && c == 4;
+    offset_t h_split = align(h, FLAGS_alignment), w_split = align(w, FLAGS_alignment);
 
     split_range<offset_t>(
-        h, FLAGS_tile_height, FLAGS_tile_pad, FLAGS_extend_grace,
-        [&, w = w](offset_t y, offset_t th, bool h_beg, bool h_end) {
+        h_split, FLAGS_tile_height, FLAGS_tile_pad, FLAGS_extend_grace,
+        [&, h = h, w = w](offset_t y, offset_t th, bool h_beg, bool h_end) {
           return split_range<offset_t>(
-              w, FLAGS_tile_width, FLAGS_tile_pad, FLAGS_extend_grace,
+              w_split, FLAGS_tile_width, FLAGS_tile_pad, FLAGS_extend_grace,
               [&](offset_t x, offset_t tw, bool w_beg, bool w_end) -> bool {
                 auto tile_start = hr_clock::now();
 
                 md_view<float, 3> input_tensor = {reinterpret_cast<float *>(session->input), {3, th, tw}};
-                importer->import_color(input_tensor,
-                                       ctx.in_image.slice<0>(y, y + th).slice<1>(x, x + tw),
+                auto ret = importer->import_color(input_tensor,
+                                       ctx.in_image.slice<0>(y, std::min(y + th, h)).slice<1>(x, std::min(x + tw, w)),
                                        session->stream);
+                if (!ret.empty()) {
+                  LOG(FATAL) << "Unexpected error importing pixel: " << ret;
+                }
 
                 WorkContextInternal tile_ctx{
                     .tile_start = tile_start,
@@ -244,7 +253,11 @@ static void pixel_import_worker(ichan &in, ichan &out) {
 
                 if (process_alpha) {
                   auto alpha_start = hr_clock::now();
-                  importer->import_alpha(input_tensor, session->stream);
+                  ret = importer->import_alpha(input_tensor, session->stream);
+                  if (!ret.empty()) {
+                    LOG(FATAL) << "Unexpected error importing pixel: " << ret;
+                  }
+
                   tile_ctx = {
                       .tile_start = alpha_start,
                       .y = y, .x = x, .th = th, .tw = tw,
@@ -331,11 +344,15 @@ static void pixel_export_worker(ichan &in, ichan &out) {
     auto ctx = std::move(*i);
     md_view<float, 3> output_tensor =
         {reinterpret_cast<float *>(session->output), {3, ctx.th * h_scale, ctx.tw * w_scale}};
+    std::string ret;
     if (ctx.is_alpha) {
-      exporter->fetch_alpha(output_tensor, session->stream);
+      ret = exporter->fetch_alpha(output_tensor, session->stream);
     }
     else {
-      exporter->fetch_color(output_tensor, session->stream);
+      ret = exporter->fetch_color(output_tensor, session->stream);
+    }
+    if (!ret.empty()) {
+      LOG(FATAL) << "Unexpected error fetching result pixel: " << ret;
     }
 
     auto err = cudaStreamSynchronize(session->stream);
@@ -358,11 +375,15 @@ static void pixel_export_worker(ichan &in, ichan &out) {
     }
 
     pad_descriptor pad_desc{FLAGS_tile_pad * h_scale, ctx.h_beg, ctx.h_end, ctx.w_beg, ctx.w_end};
+    auto [h, w, _] = ctx.out_image.shape;
     auto out_tile = ctx.out_image
-        .slice<0>(h_scale * ctx.y, h_scale * (ctx.y + ctx.th))
-        .slice<1>(w_scale * ctx.x, w_scale * (ctx.x + ctx.tw));
+        .slice<0>(h_scale * ctx.y, std::min(h_scale * (ctx.y + ctx.th), h))
+        .slice<1>(w_scale * ctx.x, std::min(w_scale * (ctx.x + ctx.tw), w));
     if (!ctx.has_alpha || ctx.is_alpha) {
-      exporter->export_data(out_tile, pad_desc);
+      ret = exporter->export_data(out_tile, pad_desc);
+      if (!ret.empty()) {
+        LOG(FATAL) << "Unexpected error exporting pixel: " << ret;
+      }
     }
 
     VLOG(1) << "Tile "

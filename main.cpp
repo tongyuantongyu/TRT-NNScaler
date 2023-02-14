@@ -97,6 +97,7 @@ DEFINE_int32(tile_width, 512, "tile width");
 DEFINE_int32(tile_height, 512, "tile height");
 DEFINE_int32(tile_pad, 16, "tile pad border to reduce tile block discontinuity");
 DEFINE_int32(extend_grace, 0, "grace limit to not split another tile");
+DECLARE_int32(alignment);
 
 void verify_flags() {
   if (!exists(std::filesystem::path(FLAGS_model_path))) {
@@ -114,6 +115,11 @@ void verify_flags() {
   if (FLAGS_extend_grace < 0 || FLAGS_extend_grace >= (FLAGS_tile_width - FLAGS_tile_pad)
       || FLAGS_extend_grace >= (FLAGS_tile_height - FLAGS_tile_pad)) {
     LOG(FATAL) << "Invalid tile extend grace.";
+  }
+
+  if (FLAGS_alignment < 1 || FLAGS_tile_width % FLAGS_alignment != 0 || FLAGS_tile_height % FLAGS_alignment != 0
+      || FLAGS_tile_pad % FLAGS_alignment != 0 || FLAGS_extend_grace % FLAGS_alignment != 0) {
+    LOG(FATAL) << "Invalid tile alignment.";
   }
 
   auto ext_count = std::count(FLAGS_extensions.begin(), FLAGS_extensions.end(), ',');
