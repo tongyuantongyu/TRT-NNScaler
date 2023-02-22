@@ -246,8 +246,8 @@ int wmain(int argc, wchar_t **wargv) {
 
   InferenceContext ctx{
       {
-          {std::min(FLAGS_extend_grace + FLAGS_tile_pad, MinDimension), FLAGS_tile_width, max_width},
-          {std::min(FLAGS_extend_grace + FLAGS_tile_pad, MinDimension), FLAGS_tile_height, max_height},
+          {std::min(std::max(FLAGS_extend_grace + FLAGS_tile_pad, FLAGS_alignment), MinDimension), FLAGS_tile_width, max_width},
+          {std::min(std::max(FLAGS_extend_grace + FLAGS_tile_pad, FLAGS_alignment), MinDimension), FLAGS_tile_height, max_height},
           1,
           FLAGS_fp16,
           FLAGS_external,
