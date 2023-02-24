@@ -118,10 +118,11 @@ std::string OptimizationContext::optimize() {
 
   network->getInput(0)->setName("input");
   network->getOutput(0)->setName("output");
-  network->getInput(0)->setType(nvinfer1::DataType::kFLOAT);
-  network->getOutput(0)->setType(nvinfer1::DataType::kFLOAT);
 
-//  auto ioDataType = config.use_fp16 ? nvinfer1::DataType::kHALF : nvinfer1::DataType::kFLOAT;
+  auto ioDataType = config.use_fp16 ? nvinfer1::DataType::kHALF : nvinfer1::DataType::kFLOAT;
+  network->getInput(0)->setType(ioDataType);
+  network->getOutput(0)->setType(ioDataType);
+
   auto height = config.input_height;
   auto width = config.input_width;
   auto batch = config.batch;

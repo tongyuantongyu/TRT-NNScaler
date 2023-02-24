@@ -35,7 +35,8 @@ void debug_me_show_memory(md_view<T, D> t) {
   using _T = typename std::decay<T>::type;
   auto size = t.size();
   auto host_pointer = std::make_unique<_T[]>(size);
-  cudaMemcpy(host_pointer.get(), t.data, size * sizeof(_T), cudaMemcpyDeviceToHost);
+  auto bytes = size * sizeof(_T);
+  cudaMemcpy(host_pointer.get(), t.data, bytes, cudaMemcpyDeviceToHost);
   auto h = host_pointer.get();
 
   // Now feel free to examine host_pointer (or through h)

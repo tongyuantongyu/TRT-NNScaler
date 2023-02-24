@@ -442,6 +442,13 @@ void util_attrs copy(const md_view<T, DIMS> &dst, const md_view<T, DIMS> &src) {
 }
 
 namespace detail {
+template<class T, class Memcpy>
+void util_attrs copy_impl(const md_uview<T, 1> &dst, const md_uview<const T, 1> &src, Memcpy cp) {
+  for (int i = 0; i < dst.shape[0]; ++i) {
+    cp(&dst.at(i), &src.at(i), sizeof(T));
+  }
+}
+
 template<class T, std::size_t DIMS, class Memcpy>
 void util_attrs copy_impl(const md_uview<T, DIMS> &dst, const md_uview<const T, DIMS> &src, Memcpy cp) {
   if (dst.at(0).is_contiguous() && src.at(0).is_contiguous()) {
@@ -453,13 +460,6 @@ void util_attrs copy_impl(const md_uview<T, DIMS> &dst, const md_uview<const T, 
     for (int i = 0; i < dst.shape[0]; ++i) {
       copy_impl(dst.at(i), src.at(i), cp);
     }
-  }
-}
-
-template<class T, class Memcpy>
-void util_attrs copy_impl(const md_uview<T, 1> &dst, const md_uview<const T, 1> &src, Memcpy cp) {
-  for (int i = 0; i < dst.shape[0]; ++i) {
-    cp(dst.at(i).data, src.at(i).data, sizeof(T));
   }
 }
 }

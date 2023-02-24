@@ -4,11 +4,11 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CUDA_STANDARD 20)
 
-project(TRT-NNScaler LANGUAGES CXX)
+project(TRT-NNScaler LANGUAGES CXX CUDA)
 
 if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     if (CMAKE_SYSTEM_PROCESSOR STREQUAL aarch64)
-        set(CMAKE_CUDA_ARCHITECTURES 53 62 72 87)
+        set(CMAKE_CUDA_ARCHITECTURES 62 72 87)
     else ()
         set(CMAKE_CUDA_ARCHITECTURES 61 70 75 80 86 89 90)
     endif ()
@@ -50,10 +50,10 @@ endif ()
 
 add_subdirectory(libyuv)
 
-#add_library(reformat_cuda OBJECT reformat/reformat_cuda.h reformat/reformat.cu)
+add_library(reformat_cuda STATIC reformat/reformat_cuda.h reformat/reformat.cu)
 
-add_library(reformat OBJECT reformat/reformat.h reformat/reformat_cuda.h reformat/reformat.cpp)
-target_link_libraries(reformat PUBLIC CUDA::cudart)
+add_library(reformat INTERFACE reformat/reformat.h reformat/reformat_cuda.h)
+target_link_libraries(reformat INTERFACE CUDA::cudart reformat_cuda)
 
 set(SOURCE_FILES
         md_view.h

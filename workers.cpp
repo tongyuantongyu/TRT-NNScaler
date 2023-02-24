@@ -2,8 +2,8 @@
 // Created by TYTY on 2023-02-12 012.
 //
 
+#include <cmath>
 #include <array>
-#include <memory>
 #include <iostream>
 
 #include "nn-scaler.h"
@@ -14,10 +14,22 @@
 #include "logging.h"
 #include "libyuv/scale_argb.h"
 #include "libyuv/scale_rgb.h"
+#include "cuda_fp16.h"
+
+//#include "reveal.h"
 
 extern InferenceSession *session;
-extern pixel_importer_cpu *importer;
-extern pixel_exporter_cpu_crop *exporter;
+
+extern int using_io;
+
+extern pixel_importer_cpu *importer_cpu;
+extern pixel_exporter_cpu *exporter_cpu;
+
+extern pixel_importer_gpu<float> *importer_gpu;
+extern pixel_exporter_gpu<float> *exporter_gpu;
+
+extern pixel_importer_gpu<half> *importer_gpu_fp16;
+extern pixel_exporter_gpu<half> *exporter_gpu_fp16;
 
 extern int32_t h_scale, w_scale;
 
@@ -47,7 +59,7 @@ struct WorkContextInternal {
 
 typedef channel<WorkContextInternal> ichan;
 
-DEFINE_string(alpha, "nn", "Alpha process mode: nn, filter, ignore");
+DEFINE_string(alpha, "nn", "alpha process mode: nn, filter, ignore");
 DEFINE_validator(alpha, [](const char *flagname, const std::string &value) {
   if (value == "nn" || value == "ignore") {
     return true;
@@ -60,8 +72,8 @@ DEFINE_validator(alpha, [](const char *flagname, const std::string &value) {
   return false;
 });
 
-DEFINE_double(pre_scale, 1.0, "Scale ratio before NN super resolution.");
-DEFINE_double(post_scale, 1.0, "Scale ratio before NN super resolution.");
+DEFINE_double(pre_scale, 1.0, "scale ratio before NN super resolution.");
+DEFINE_double(post_scale, 1.0, "scale ratio before NN super resolution.");
 
 static void image_load_worker(chan &in, ichan &out) {
   while (true) {
@@ -207,10 +219,77 @@ static void pixel_import_worker(ichan &in, ichan &out) {
               [&](offset_t x, offset_t tw, bool w_beg, bool w_end) -> bool {
                 auto tile_start = hr_clock::now();
 
+                auto input_tile = ctx.in_image.slice<0>(y, std::min(y + th, h)).slice<1>(x, std::min(x + tw, w));
                 md_view<float, 3> input_tensor = {reinterpret_cast<float *>(session->input), {3, th, tw}};
-                auto ret = importer->import_color(input_tensor,
-                                       ctx.in_image.slice<0>(y, std::min(y + th, h)).slice<1>(x, std::min(x + tw, w)),
-                                       session->stream);
+                md_view<half, 3> input_tensor_fp16 = {reinterpret_cast<half *>(session->input), {3, th, tw}};
+
+                bool first_tile = h_beg && w_beg;
+
+                if (process_alpha) {
+                  auto alpha_start = hr_clock::now();
+                  std::string ret;
+                  switch (using_io) {
+                    case 0:
+                      ret = importer_cpu->import_alpha(input_tensor, input_tile, session->stream); break;
+                    case 1:
+                      ret = importer_gpu->import_alpha<uint8_t>(input_tensor, input_tile, session->stream); break;
+                    case 2:
+                      ret = importer_gpu_fp16->import_alpha<uint8_t>(input_tensor_fp16, input_tile, session->stream); break;
+                    default:
+                      LOG(FATAL) << "Unknown IO mode.";
+                  }
+
+                  if (!ret.empty()) {
+                    LOG(FATAL) << "Unexpected error importing pixel: " << ret;
+                  }
+
+                  WorkContextInternal tile_ctx = {
+                      .tile_start = alpha_start,
+                      .y = y, .x = x, .th = th, .tw = tw,
+                      .h_beg = h_beg, .h_end = h_end, .w_beg = w_beg, .w_end = w_end,
+                      .has_alpha = true, .is_alpha = true,
+                      .out_image = ctx.out_image,
+                  };
+
+                  if (first_tile) {
+                    tile_ctx.output = ctx.output;
+                    tile_ctx.image_start = ctx.image_start;
+                    tile_ctx.out_memory = std::move(ctx.out_memory);
+                    first_tile = false;
+                  }
+
+                  VLOG(2) << "Tile "
+                          << std::setw(4) << tw << 'x'
+                          << std::setw(4) << th << '+'
+                          << std::setw(4) << x << '+'
+                          << std::setw(4) << y << " alpha imported in "
+                          << elapsed(alpha_start) << "ms";
+
+                  auto input_done = tile_ctx.input_consumed.get_future();
+                  out.put(std::move(tile_ctx));
+                  input_done.get();
+
+                  VLOG(2) << "Tile "
+                          << std::setw(4) << tw << 'x'
+                          << std::setw(4) << th << '+'
+                          << std::setw(4) << x << '+'
+                          << std::setw(4) << y << " alpha input consumed in "
+                          << elapsed(alpha_start) << "ms";
+
+                }
+
+                std::string ret;
+                switch (using_io) {
+                  case 0:
+                    ret = importer_cpu->import_color(input_tensor, input_tile, session->stream); break;
+                  case 1:
+                    ret = importer_gpu->import_color<uint8_t>(input_tensor, input_tile, session->stream); break;
+                  case 2:
+                    ret = importer_gpu_fp16->import_color<uint8_t>(input_tensor_fp16, input_tile, session->stream); break;
+                  default:
+                    LOG(FATAL) << "Unknown IO mode.";
+                }
+
                 if (!ret.empty()) {
                   LOG(FATAL) << "Unexpected error importing pixel: " << ret;
                 }
@@ -230,13 +309,13 @@ static void pixel_import_worker(ichan &in, ichan &out) {
                         << std::setw(4) << y << " imported in "
                         << elapsed(tile_start) << "ms";
 
-                if (h_beg && w_beg) {
+                if (first_tile) {
                   tile_ctx.output = ctx.output;
                   tile_ctx.image_start = ctx.image_start;
                   tile_ctx.out_memory = std::move(ctx.out_memory);
                 }
 
-                if (h_end && w_end && !process_alpha) {
+                if (h_end && w_end) {
                   tile_ctx.is_end = true;
                 }
 
@@ -250,45 +329,6 @@ static void pixel_import_worker(ichan &in, ichan &out) {
                         << std::setw(4) << x << '+'
                         << std::setw(4) << y << " input consumed in "
                         << elapsed(tile_start) << "ms ";
-
-                if (process_alpha) {
-                  auto alpha_start = hr_clock::now();
-                  ret = importer->import_alpha(input_tensor, session->stream);
-                  if (!ret.empty()) {
-                    LOG(FATAL) << "Unexpected error importing pixel: " << ret;
-                  }
-
-                  tile_ctx = {
-                      .tile_start = alpha_start,
-                      .y = y, .x = x, .th = th, .tw = tw,
-                      .h_beg = h_beg, .h_end = h_end, .w_beg = w_beg, .w_end = w_end,
-                      .has_alpha = true, .is_alpha = true,
-                      .out_image = ctx.out_image,
-                  };
-
-                  VLOG(2) << "Tile "
-                          << std::setw(4) << tw << 'x'
-                          << std::setw(4) << th << '+'
-                          << std::setw(4) << x << '+'
-                          << std::setw(4) << y << " alpha imported in "
-                          << elapsed(alpha_start) << "ms";
-
-                  if (h_end && w_end) {
-                    tile_ctx.is_end = true;
-                  }
-
-                  input_done = tile_ctx.input_consumed.get_future();
-                  out.put(std::move(tile_ctx));
-                  input_done.get();
-
-                  VLOG(2) << "Tile "
-                          << std::setw(4) << tw << 'x'
-                          << std::setw(4) << th << '+'
-                          << std::setw(4) << x << '+'
-                          << std::setw(4) << y << " alpha input consumed in "
-                          << elapsed(alpha_start) << "ms";
-
-                }
 
                 return true;
               }
@@ -342,31 +382,6 @@ static void pixel_export_worker(ichan &in, ichan &out) {
     }
 
     auto ctx = std::move(*i);
-    md_view<float, 3> output_tensor =
-        {reinterpret_cast<float *>(session->output), {3, ctx.th * h_scale, ctx.tw * w_scale}};
-    std::string ret;
-    if (ctx.is_alpha) {
-      ret = exporter->fetch_alpha(output_tensor, session->stream);
-    }
-    else {
-      ret = exporter->fetch_color(output_tensor, session->stream);
-    }
-    if (!ret.empty()) {
-      LOG(FATAL) << "Unexpected error fetching result pixel: " << ret;
-    }
-
-    auto err = cudaStreamSynchronize(session->stream);
-    if (err != cudaSuccess) {
-      LOG(FATAL) << "CUDA Error: " << err;
-    }
-    VLOG(2) << "Tile "
-            << std::setw(4) << ctx.tw << 'x'
-            << std::setw(4) << ctx.th << '+'
-            << std::setw(4) << ctx.x << '+'
-            << std::setw(4) << ctx.y << " output produced in "
-            << elapsed(ctx.tile_start) << "ms";
-
-    ctx.output_consumed.set_value();
 
     if (!ctx.output.empty()) {  // begin of image
       output.swap(ctx.output);
@@ -374,17 +389,46 @@ static void pixel_export_worker(ichan &in, ichan &out) {
       out_memory = std::move(ctx.out_memory);
     }
 
+    md_view<float, 3> output_tensor =
+        {reinterpret_cast<float *>(session->output), {3, ctx.th * h_scale, ctx.tw * w_scale}};
+    md_view<half, 3> output_tensor_fp16 =
+        {reinterpret_cast<half *>(session->output), {3, ctx.th * h_scale, ctx.tw * w_scale}};
     pad_descriptor pad_desc{FLAGS_tile_pad * h_scale, ctx.h_beg, ctx.h_end, ctx.w_beg, ctx.w_end};
     auto [h, w, _] = ctx.out_image.shape;
     auto out_tile = ctx.out_image
         .slice<0>(h_scale * ctx.y, std::min(h_scale * (ctx.y + ctx.th), h))
         .slice<1>(w_scale * ctx.x, std::min(w_scale * (ctx.x + ctx.tw), w));
-    if (!ctx.has_alpha || ctx.is_alpha) {
-      ret = exporter->export_data(out_tile, pad_desc);
-      if (!ret.empty()) {
-        LOG(FATAL) << "Unexpected error exporting pixel: " << ret;
+
+    std::string ret;
+    if (ctx.is_alpha) {
+      switch (using_io) {
+        case 0:
+          ret = exporter_cpu->fetch_alpha(output_tensor, session->stream); break;
+        case 1:
+          ret = exporter_gpu->fetch_alpha(output_tensor, session->stream); break;
+        case 2:
+          ret = exporter_gpu_fp16->fetch_alpha(output_tensor_fp16, session->stream); break;
+        default:
+          LOG(FATAL) << "Unknown IO mode.";
       }
     }
+    else {
+      switch (using_io) {
+        case 0:
+          ret = exporter_cpu->fetch_color(output_tensor, out_tile, pad_desc, session->stream); break;
+        case 1:
+          ret = exporter_gpu->fetch_color<uint8_t>(output_tensor, out_tile, pad_desc, session->stream); break;
+        case 2:
+          ret = exporter_gpu_fp16->fetch_color<uint8_t>(output_tensor_fp16, out_tile, pad_desc, session->stream); break;
+        default:
+          LOG(FATAL) << "Unknown IO mode.";
+      }
+    }
+    if (!ret.empty()) {
+      LOG(FATAL) << "Unexpected error fetching result pixel: " << ret;
+    }
+
+    ctx.output_consumed.set_value();
 
     VLOG(1) << "Tile "
             << std::setw(4) << ctx.tw << 'x'
@@ -392,6 +436,8 @@ static void pixel_export_worker(ichan &in, ichan &out) {
             << std::setw(4) << ctx.x << '+'
             << std::setw(4) << ctx.y << " scale done in "
             << elapsed(ctx.tile_start) << "ms";
+
+
 
     if (ctx.is_end) {
       ctx.output.swap(output);

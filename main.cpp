@@ -11,6 +11,7 @@
 #include <cstdlib>
 
 #include "gflags/gflags.h"
+#include "cuda_fp16.h"
 
 #include "nn-scaler.h"
 #include "logging.h"
@@ -20,8 +21,17 @@
 DEFINE_string(model_path, "models", "path to the folder to save model files");
 
 InferenceSession *session = nullptr;
-pixel_importer_cpu *importer = nullptr;
-pixel_exporter_cpu_crop *exporter = nullptr;
+
+int using_io = 0;
+
+pixel_importer_cpu *importer_cpu = nullptr;
+pixel_exporter_cpu *exporter_cpu = nullptr;
+
+pixel_importer_gpu<float> *importer_gpu = nullptr;
+pixel_exporter_gpu<float> *exporter_gpu = nullptr;
+
+pixel_importer_gpu<half> *importer_gpu_fp16 = nullptr;
+pixel_exporter_gpu<half> *exporter_gpu_fp16 = nullptr;
 
 static uint64_t total_processed = 0;
 
@@ -88,9 +98,10 @@ static std::string handle_folder(const std::filesystem::path &input, chan &works
 
 static Logger gLogger;
 
-DEFINE_bool(fp16, false, "Use FP16 processing");
-DEFINE_bool(external, false, "Use external algorithms from cuDNN and cuBLAS");
-DEFINE_bool(low_mem, false, "Tweak configs to reduce memory consumption");
+DEFINE_bool(fp16, false, "use FP16 processing");
+DEFINE_bool(external, false, "use external algorithms from cuDNN and cuBLAS");
+DEFINE_bool(low_mem, false, "tweak configs to reduce memory consumption");
+DEFINE_string(reformatter, "auto", "reformatter used to import and export pixels: cpu, gpu, auto");
 
 DECLARE_string(alpha);
 DEFINE_int32(tile_width, 512, "tile width");
@@ -154,7 +165,7 @@ void custom_prefix(std::ostream &s, const google::LogMessageInfo &l, void *) {
 
 DECLARE_string(flagfile);
 
-DEFINE_bool(cuda_lazy_load, true, "Enable CUDA lazying load.");
+DEFINE_bool(cuda_lazy_load, true, "enable CUDA lazying load.");
 
 int32_t h_scale, w_scale;
 
@@ -286,16 +297,34 @@ int wmain(int argc, wchar_t **wargv) {
     LOG(FATAL) << "different width and height scale ratio unimplemented.";
   }
 
-  if (FLAGS_fp16) {
-    LOG(FATAL) << "FP16 mode unimplemented.";
-  }
-
   // ------------------------------
   // Import & Export
   auto max_size = size_t(max_width) * max_height;
 
-  importer = new pixel_importer_cpu(max_size, FLAGS_alpha != "ignore");
-  exporter = new pixel_exporter_cpu_crop(h_scale * w_scale * max_size);
+  if (FLAGS_reformatter == "auto") {
+    FLAGS_reformatter = FLAGS_fp16 ? "gpu" : "cpu";
+  }
+  if (FLAGS_fp16 && FLAGS_reformatter == "cpu") {
+    LOG(FATAL) << "CPU reformatter can not handle FP16.";
+  }
+
+  if (FLAGS_reformatter == "cpu") {
+    importer_cpu = new pixel_importer_cpu(max_size, FLAGS_alpha != "ignore");
+    exporter_cpu = new pixel_exporter_cpu(h_scale * w_scale * max_size, FLAGS_alpha != "ignore");
+    using_io = 0;
+  } else if (FLAGS_reformatter == "gpu") {
+    if (FLAGS_fp16) {
+      importer_gpu_fp16 = new pixel_importer_gpu<half>(max_size, FLAGS_alpha != "ignore");
+      exporter_gpu_fp16 = new pixel_exporter_gpu<half>(h_scale * w_scale * max_size, FLAGS_alpha != "ignore");
+      using_io = 2;
+    } else {
+      importer_gpu = new pixel_importer_gpu<float>(max_size, FLAGS_alpha != "ignore");
+      exporter_gpu = new pixel_exporter_gpu<float>(h_scale * w_scale * max_size, FLAGS_alpha != "ignore");
+      using_io = 1;
+    }
+  } else {
+    LOG(FATAL) << "Unknown reformatter.";
+  }
 
   chan works;
   std::thread pipeline(launch_pipeline, std::ref(works));
