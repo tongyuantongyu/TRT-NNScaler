@@ -218,6 +218,30 @@ std::string pixel_importer_cpu::import_alpha(md_view<float, 3> dst,
   return "";
 }
 
+
+template<typename T>
+std::string pixel_exporter_cpu::fetch_alpha(md_view<const float, 3> src, cudaStream_t stream) {
+  auto [c, h, w] = src.shape;
+
+  if (h * w > max_size) {
+    return "dimension too big";
+  }
+
+  auto err = cudaMemcpyAsync(buffer_alpha.get(), src.data, h * w * 4, cudaMemcpyDeviceToHost, stream);
+  if (err != cudaSuccess) {
+    return std::string("CUDA error: ") + cudaGetErrorName(err);
+  }
+
+  err = cudaStreamSynchronize(stream);
+  if (err != cudaSuccess) {
+    return std::string("CUDA error: ") + cudaGetErrorName(err);
+  }
+
+  current_buffer_shape = src.shape;
+  alpha_filled = true;
+  return "";
+}
+
 template<std::unsigned_integral U>
 std::string pixel_exporter_cpu::fetch_color(md_view<const float, 3> src,
                                             md_uview<U, 3> dst,
@@ -317,29 +341,6 @@ std::string pixel_exporter_cpu::fetch_color(md_view<const float, 3> src,
     assert(false);
   }
 
-  return "";
-}
-
-template<typename T>
-std::string pixel_exporter_cpu::fetch_alpha(md_view<const float, 3> src, cudaStream_t stream) {
-  auto [c, h, w] = src.shape;
-
-  if (h * w > max_size) {
-    return "dimension too big";
-  }
-
-  auto err = cudaMemcpyAsync(buffer_alpha.get(), src.data, h * w * 4, cudaMemcpyDeviceToHost, stream);
-  if (err != cudaSuccess) {
-    return std::string("CUDA error: ") + cudaGetErrorName(err);
-  }
-
-  err = cudaStreamSynchronize(stream);
-  if (err != cudaSuccess) {
-    return std::string("CUDA error: ") + cudaGetErrorName(err);
-  }
-
-  current_buffer_shape = src.shape;
-  alpha_filled = true;
   return "";
 }
 
@@ -523,7 +524,7 @@ std::string pixel_exporter_gpu<F, eSize>::fetch_alpha(md_view<const F, 3> src, c
     return "dimension too big";
   }
 
-  auto err = cudaMemcpyAsync(gpu_buffer_alpha, src.data, h * w, cudaMemcpyDeviceToDevice, stream);
+  auto err = cudaMemcpyAsync(gpu_buffer_alpha, src.data, h * w * sizeof(F), cudaMemcpyDeviceToDevice, stream);
   if (err != cudaSuccess) {
     return std::string("CUDA error: ") + cudaGetErrorName(err);
   }

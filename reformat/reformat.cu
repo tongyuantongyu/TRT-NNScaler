@@ -127,13 +127,8 @@ void import_pixel_cuda(md_view<F, 3> dst,
     import_opaque_kernel<<<dimGrid, dimBlock, 0, stream>>>(dst, src, F(a), F(b));
   }
   else {
-    if (c == 4) {
-      import_alpha_kernel<<<dimGrid, dimBlock, 0, stream>>>(dst, dst_alpha, src, F(a), F(b));
-    }
-    else {
-      import_opaque_kernel<<<dimGrid, dimBlock, 0, stream>>>(dst, src, F(a), F(b));
-      cudaMemsetAsync(dst_alpha.data, 0, dst_alpha.size() * sizeof(F), stream);
-    }
+    assert(src.shape[2] == 4);
+    import_alpha_kernel<<<dimGrid, dimBlock, 0, stream>>>(dst, dst_alpha, src, F(a), F(b));
   }
 }
 
