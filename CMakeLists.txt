@@ -19,8 +19,8 @@ if (MSVC)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/utf-8$<SEMICOLON>/wd4996>)
 endif ()
 
-find_package(CUDAToolkit 11.0 REQUIRED)
-find_package(TensorRT 8.5.0 REQUIRED COMPONENTS OnnxParser)
+find_package(CUDAToolkit 12.0 REQUIRED)
+find_package(TensorRT 8.6.0 REQUIRED COMPONENTS OnnxParser)
 
 option(LOCAL_GFLAGS_GLOG "Use local GFlags and GLog" OFF)
 

@@ -29,13 +29,13 @@ nvinfer1::IBuilderConfig *OptimizationContext::prepareConfig() const {
   conf->setFlag(nvinfer1::BuilderFlag::kSPARSE_WEIGHTS);
   conf->setFlag(nvinfer1::BuilderFlag::kOBEY_PRECISION_CONSTRAINTS);
   conf->setProfilingVerbosity(nvinfer1::ProfilingVerbosity::kDETAILED);
-  conf->setPreviewFeature(nvinfer1::PreviewFeature::kFASTER_DYNAMIC_SHAPES_0805, true);
-  if (!config.external) {
-    conf->setTacticSources(conf->getTacticSources() & ~nvinfer1::TacticSources(
+  conf->setMaxAuxStreams(8);
+  if (config.external) {
+    conf->setTacticSources(conf->getTacticSources() | nvinfer1::TacticSources(
         (1u << int32_t(nvinfer1::TacticSource::kCUDNN)) |
             (1u << int32_t(nvinfer1::TacticSource::kCUBLAS)) |
             (1u << int32_t(nvinfer1::TacticSource::kCUBLAS_LT))));
-    conf->setPreviewFeature(nvinfer1::PreviewFeature::kDISABLE_EXTERNAL_TACTIC_SOURCES_FOR_CORE_0805, true);
+    conf->setPreviewFeature(nvinfer1::PreviewFeature::kDISABLE_EXTERNAL_TACTIC_SOURCES_FOR_CORE_0805, false);
   }
   if (config.low_mem) {
     conf->setTacticSources(conf->getTacticSources() & ~nvinfer1::TacticSources(
