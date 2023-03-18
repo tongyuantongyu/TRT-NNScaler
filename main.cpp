@@ -101,6 +101,7 @@ static Logger gLogger;
 DEFINE_bool(fp16, false, "use FP16 processing");
 DEFINE_bool(external, false, "use external algorithms from cuDNN and cuBLAS");
 DEFINE_bool(low_mem, false, "tweak configs to reduce memory consumption");
+DEFINE_int32(aux_stream, -1, "Auxiliary streams to use");
 DEFINE_string(reformatter, "auto", "reformatter used to import and export pixels: cpu, gpu, auto");
 
 DECLARE_string(alpha);
@@ -260,6 +261,7 @@ int wmain(int argc, wchar_t **wargv) {
           {std::min(std::max(FLAGS_extend_grace + FLAGS_tile_pad, FLAGS_alignment), MinDimension), FLAGS_tile_width, max_width},
           {std::min(std::max(FLAGS_extend_grace + FLAGS_tile_pad, FLAGS_alignment), MinDimension), FLAGS_tile_height, max_height},
           1,
+          FLAGS_aux_stream,
           FLAGS_fp16,
           FLAGS_external,
           FLAGS_low_mem,

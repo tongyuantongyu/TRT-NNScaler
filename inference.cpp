@@ -23,7 +23,7 @@
 
 DECLARE_string(model);
 
-InferenceContext::InferenceContext(ESRGANConfig config,
+InferenceContext::InferenceContext(ScalerConfig config,
                                    nvinfer1::ILogger &logger,
                                    const std::filesystem::path& path_prefix)
     : config(config),

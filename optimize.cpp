@@ -29,7 +29,9 @@ nvinfer1::IBuilderConfig *OptimizationContext::prepareConfig() const {
   conf->setFlag(nvinfer1::BuilderFlag::kSPARSE_WEIGHTS);
   conf->setFlag(nvinfer1::BuilderFlag::kOBEY_PRECISION_CONSTRAINTS);
   conf->setProfilingVerbosity(nvinfer1::ProfilingVerbosity::kDETAILED);
-  conf->setMaxAuxStreams(8);
+  if (config.aux_stream != -1) {
+    conf->setMaxAuxStreams(config.aux_stream);
+  }
   if (config.external) {
     conf->setTacticSources(conf->getTacticSources() | nvinfer1::TacticSources(
         (1u << int32_t(nvinfer1::TacticSource::kCUDNN)) |
@@ -49,7 +51,7 @@ nvinfer1::IBuilderConfig *OptimizationContext::prepareConfig() const {
   return conf;
 }
 
-OptimizationContext::OptimizationContext(ESRGANConfig config, nvinfer1::ILogger &logger,
+OptimizationContext::OptimizationContext(ScalerConfig config, nvinfer1::ILogger &logger,
                                          std::filesystem::path path_prefix_)
     : config(config), logger(logger), path_prefix(std::move(path_prefix_)),
       builder(nvinfer1::createInferBuilder(logger)), cache(nullptr), prop{}, total_memory{} {

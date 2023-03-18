@@ -34,18 +34,19 @@ static std::ostream &operator<<(std::ostream &os, const optimization_axis &o) {
   return os;
 }
 
-struct ESRGANConfig {
+struct ScalerConfig {
   optimization_axis input_width;
   optimization_axis input_height;
   optimization_axis batch;
 
+  int32_t aux_stream;
   bool use_fp16;
   bool external;
   bool low_mem;
 
   [[nodiscard]] std::string engine_name() const {
     std::stringstream ss;
-    ss << "_w" << input_width << "_h" << input_height << "_b" << batch;
+    ss << "_w" << input_width << "_h" << input_height << "_b" << batch << "_a" << aux_stream;
     if (use_fp16) {
       ss << "_fp16";
     }
@@ -61,7 +62,7 @@ struct ESRGANConfig {
 };
 
 class OptimizationContext {
-  ESRGANConfig config;
+  ScalerConfig config;
   nvinfer1::ILogger &logger;
   std::filesystem::path path_prefix;
   std::filesystem::path path_engine;
@@ -76,7 +77,7 @@ class OptimizationContext {
   [[nodiscard]] nvinfer1::INetworkDefinition *createNetwork() const;
 
  public:
-  OptimizationContext(ESRGANConfig config, nvinfer1::ILogger &logger, std::filesystem::path path_prefix);
+  OptimizationContext(ScalerConfig config, nvinfer1::ILogger &logger, std::filesystem::path path_prefix);
   std::string optimize();
   ~OptimizationContext();
 };
@@ -92,8 +93,8 @@ class InferenceContext {
   friend class InferenceSession;
 
  public:
-  ESRGANConfig config;
-  InferenceContext(ESRGANConfig config, nvinfer1::ILogger &logger, const std::filesystem::path& path_prefix);
+  ScalerConfig config;
+  InferenceContext(ScalerConfig config, nvinfer1::ILogger &logger, const std::filesystem::path& path_prefix);
   bool has_file();
   std::string load_engine();
 
