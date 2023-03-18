@@ -113,3 +113,11 @@ elseif (USE_WUFFS_LIBJPEG_READER)
 
     target_link_libraries(nn-scaler PUBLIC image_wuffs)
 endif()
+
+add_executable(inspector inspector.cpp)
+target_link_libraries(inspector PUBLIC
+        CUDA::cudart
+        TensorRT::NvInfer
+        gflags::gflags
+        glog::glog
+)
