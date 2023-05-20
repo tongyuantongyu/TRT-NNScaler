@@ -6,41 +6,28 @@
 #include <filesystem>
 
 #include "NvInfer.h"
-#include "gflags/gflags.h"
+#include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
+#include "absl/flags/usage.h"
 #include "logging.h"
-
-void custom_prefix(std::ostream &s, const google::LogMessageInfo &l, void *) {
-  switch (l.severity[0]) {
-    case 'I':s << "[INFO ]";
-      break;
-    case 'W':s << "[WARN ]";
-      break;
-    case 'E':s << "[ERROR]";
-      break;
-    case 'F':s << "[FATAL]";
-      break;
-    default:s << "[?    ]";
-      break;
-  }
-}
 
 static Logger gLogger;
 
-int main(int argc, char** argv) {
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
-  gflags::SetUsageMessage("TensorRT engine inspector.");
-  gflags::SetVersionString("0.0.1");
-  google::InitGoogleLogging(argv[0], custom_prefix);
-  google::InstallFailureFunction([]() {
-    exit(1);
-  });
+ABSL_DECLARE_FLAG(int, stderrthreshold);
+ABSL_FLAG(uint32_t, v, 0, "verbosity log level");
 
-  if (argc == 1) {
-    gflags::ShowUsageWithFlags(argv[0]);
+int main(int argc, char** argv) {
+  absl::SetFlag(&FLAGS_stderrthreshold, int(absl::LogSeverity::kInfo));
+
+  auto files = absl::ParseCommandLine(argc, argv);
+  absl::SetProgramUsageMessage("The TensorRT Neural Network inspector, version v0.0.1.  Usage:\n");
+
+  if (files.empty()) {
+    LOG(ERROR) << "No model path provided.";
     return 1;
   }
 
-  std::filesystem::path engine_file(argv[1]);
+  std::filesystem::path engine_file(files[0]);
 
   auto runtime = nvinfer1::createInferRuntime(gLogger);
   std::ifstream file(engine_file, std::ios::binary);

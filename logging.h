@@ -4,7 +4,17 @@
 
 #include "NvInferRuntimeCommon.h"
 
-#include "glog/logging.h"
+#include "absl/flags/flag.h"
+#include "absl/flags/declare.h"
+#include "absl/log/log.h"
+
+ABSL_DECLARE_FLAG(uint32_t, v);
+
+inline bool should_log_at(int n) {
+  return absl::GetFlag(FLAGS_v) >= n;
+}
+
+#define VLOG(n) LOG_IF(INFO, should_log_at(n))
 
 using Severity = nvinfer1::ILogger::Severity;
 

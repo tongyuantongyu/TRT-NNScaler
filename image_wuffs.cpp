@@ -18,7 +18,7 @@
 #define WUFFS_CONFIG__MODULE__WBMP
 #define WUFFS_CONFIG__MODULE__ZLIB
 
-#include "wuffs/wuffs-v0.3.c"
+#include "wuffs-v0.3.c"
 
 #include <cstdio>
 #include <cmath>

@@ -1,6 +1,7 @@
 #include "nn-scaler.h"
 
-#include "gflags/gflags.h"
+#include "absl/flags/flag.h"
+#include "absl/flags/declare.h"
 
 #include <fstream>
 
@@ -21,7 +22,7 @@
     }                                                                                                                  \
   } while (0)
 
-DECLARE_string(model);
+ABSL_DECLARE_FLAG(std::string, model);
 
 InferenceContext::InferenceContext(ScalerConfig config,
                                    nvinfer1::ILogger &logger,
@@ -37,13 +38,13 @@ InferenceContext::InferenceContext(ScalerConfig config,
 }
 
 bool InferenceContext::has_file() {
-  auto target = (path_engine / FLAGS_model).replace_extension();
+  auto target = (path_engine / absl::GetFlag(FLAGS_model)).replace_extension();
   target += config.engine_name();
   return exists(target);
 }
 
 std::string InferenceContext::load_engine() {
-  auto path = (path_engine / FLAGS_model).replace_extension();
+  auto path = (path_engine / absl::GetFlag(FLAGS_model)).replace_extension();
   path += config.engine_name();
   std::ifstream file(path, std::ios::binary);
   COND_CHECK_EMPTY(file.good(), "can't open engine file: " << path);

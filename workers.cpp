@@ -5,12 +5,13 @@
 #include <cmath>
 #include <array>
 #include <iostream>
+#include <utility>
 
 #include "nn-scaler.h"
 #include "reformat/reformat.h"
 #include "image_io.h"
 
-#include "gflags/gflags.h"
+#include "absl/flags/flag.h"
 #include "logging.h"
 #include "libyuv/scale_argb.h"
 #include "libyuv/scale_rgb.h"
@@ -59,21 +60,35 @@ struct WorkContextInternal {
 
 typedef channel<WorkContextInternal> ichan;
 
-DEFINE_string(alpha, "nn", "alpha process mode: nn, filter, ignore");
-DEFINE_validator(alpha, [](const char *flagname, const std::string &value) {
-  if (value == "nn" || value == "ignore") {
-    return true;
-  }
-  if (value == "filter") {
-    std::cerr << "filter process mode is unimplemented." << std::endl;
+struct AlphaMode {
+  explicit AlphaMode(std::string m = "nn") : mode(std::move(m)) {}
+
+  std::string mode;
+};
+
+std::string AbslUnparseFlag(AlphaMode m) {
+  return m.mode;
+}
+
+bool AbslParseFlag(absl::string_view text, AlphaMode* m, std::string* error) {
+  if (!absl::ParseFlag(text, &m->mode, error)) {
     return false;
   }
-  std::cerr << "Invalid value for --" << flagname << ": " << value << std::endl;
+  if (m->mode == "nn" || m->mode == "ignore") {
+    return true;
+  }
+  if (m->mode == "filter") {
+    *error = "filter process mode is unimplemented.";
+    return false;
+  }
+  *error = "invalid value";
   return false;
-});
+}
 
-DEFINE_double(pre_scale, 1.0, "scale ratio before NN super resolution.");
-DEFINE_double(post_scale, 1.0, "scale ratio before NN super resolution.");
+ABSL_FLAG(std::string, alpha, "nn", "alpha process mode: nn, filter, ignore");
+
+ABSL_FLAG(double, pre_scale, 1.0, "scale ratio before NN super resolution.");
+ABSL_FLAG(double, post_scale, 1.0, "scale ratio before NN super resolution.");
 
 static void image_load_worker(chan &in, ichan &out) {
   while (true) {
@@ -86,7 +101,7 @@ static void image_load_worker(chan &in, ichan &out) {
     auto start = hr_clock::now();
 
     std::string err;
-    auto img_ret = load_image(c.input, FLAGS_alpha == "ignore");
+    auto img_ret = load_image(c.input, absl::GetFlag(FLAGS_alpha) == "ignore");
 
     if (get_if<1>(&img_ret)) {
       c.submitted.set_value("failed reading image: " + get<1>(img_ret));
@@ -95,10 +110,10 @@ static void image_load_worker(chan &in, ichan &out) {
 
     auto [in_shape, in_ptr] = std::move(get<0>(img_ret));
     md_view<uint8_t, 3> in_view{reinterpret_cast<uint8_t *>(in_ptr.get()), in_shape};
-    if (FLAGS_pre_scale != 1.0) {
+    if (absl::GetFlag(FLAGS_pre_scale) != 1.0) {
       auto [ho, wo, co] = in_view.shape;
-      offset_t hs = round(FLAGS_pre_scale * ho);
-      offset_t ws = round(FLAGS_pre_scale * wo);
+      offset_t hs = round(absl::GetFlag(FLAGS_pre_scale) * ho);
+      offset_t ws = round(absl::GetFlag(FLAGS_pre_scale) * wo);
       auto [scaled_view, scaled_ptr] = alloc_buffer<uint8_t>(hs, ws, co);
       if (co == 3) {
         libyuv::RGBScale(in_view.data,
@@ -185,11 +200,11 @@ static bool split_range(I total, I step, I overlap, I grace, Task task) {
   }
 }
 
-DECLARE_int32(tile_width);
-DECLARE_int32(tile_height);
-DECLARE_int32(tile_pad);
-DECLARE_int32(extend_grace);
-DEFINE_int32(alignment, 1, "model input alignment requirement");
+ABSL_DECLARE_FLAG(uint32_t, tile_width);
+ABSL_DECLARE_FLAG(uint32_t, tile_height);
+ABSL_DECLARE_FLAG(uint32_t, tile_pad);
+ABSL_DECLARE_FLAG(uint32_t, extend_grace);
+ABSL_DECLARE_FLAG(uint32_t, alignment);
 
 static offset_t align(offset_t n, size_t alignment) {
   n += alignment - 1;
@@ -197,7 +212,7 @@ static offset_t align(offset_t n, size_t alignment) {
 }
 
 static void pixel_import_worker(ichan &in, ichan &out) {
-  bool nn_alpha = FLAGS_alpha == "nn";
+  bool nn_alpha = absl::GetFlag(FLAGS_alpha) == "nn";
 
   while (true) {
     auto i = in.get();
@@ -209,13 +224,13 @@ static void pixel_import_worker(ichan &in, ichan &out) {
 
     auto [h, w, c] = ctx.in_image.shape;
     auto process_alpha = nn_alpha && c == 4;
-    offset_t h_split = align(h, FLAGS_alignment), w_split = align(w, FLAGS_alignment);
+    offset_t h_split = align(h, absl::GetFlag(FLAGS_alignment)), w_split = align(w, absl::GetFlag(FLAGS_alignment));
 
     split_range<offset_t>(
-        h_split, FLAGS_tile_height, FLAGS_tile_pad, FLAGS_extend_grace,
+        h_split, absl::GetFlag(FLAGS_tile_height), absl::GetFlag(FLAGS_tile_pad), absl::GetFlag(FLAGS_extend_grace),
         [&, h = h, w = w](offset_t y, offset_t th, bool h_beg, bool h_end) {
           return split_range<offset_t>(
-              w_split, FLAGS_tile_width, FLAGS_tile_pad, FLAGS_extend_grace,
+              w_split, absl::GetFlag(FLAGS_tile_width), absl::GetFlag(FLAGS_tile_pad), absl::GetFlag(FLAGS_extend_grace),
               [&](offset_t x, offset_t tw, bool w_beg, bool w_end) -> bool {
                 auto tile_start = hr_clock::now();
 
@@ -393,7 +408,7 @@ static void pixel_export_worker(ichan &in, ichan &out) {
         {reinterpret_cast<float *>(session->output), {3, ctx.th * h_scale, ctx.tw * w_scale}};
     md_view<half, 3> output_tensor_fp16 =
         {reinterpret_cast<half *>(session->output), {3, ctx.th * h_scale, ctx.tw * w_scale}};
-    pad_descriptor pad_desc{FLAGS_tile_pad * h_scale, ctx.h_beg, ctx.h_end, ctx.w_beg, ctx.w_end};
+    pad_descriptor pad_desc{absl::GetFlag(FLAGS_tile_pad) * h_scale, ctx.h_beg, ctx.h_end, ctx.w_beg, ctx.w_end};
     auto [h, w, _] = ctx.out_image.shape;
     auto out_tile = ctx.out_image
         .slice<0>(h_scale * ctx.y, std::min(h_scale * (ctx.y + ctx.th), h))
@@ -463,10 +478,10 @@ static void image_save_worker(ichan &in) {
     auto start = hr_clock::now();
     // TODO: wait alpha finish when alpha = filter
 
-    if (FLAGS_post_scale != 1.0) {
+    if (absl::GetFlag(FLAGS_post_scale) != 1.0) {
       auto [ho, wo, co] = ctx.out_image.shape;
-      offset_t hs = round(FLAGS_post_scale * ho);
-      offset_t ws = round(FLAGS_post_scale * wo);
+      offset_t hs = round(absl::GetFlag(FLAGS_post_scale) * ho);
+      offset_t ws = round(absl::GetFlag(FLAGS_post_scale) * wo);
       auto [scaled_view, scaled_ptr] = alloc_buffer<uint8_t, 3>({hs, ws, co});
       if (co == 3) {
         libyuv::RGBScale(ctx.out_image.data,

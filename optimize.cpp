@@ -7,9 +7,10 @@
 #include "nn-scaler.h"
 #include "NvOnnxParser.h"
 
-#include "glog/logging.h"
+#include "absl/flags/flag.h"
+#include "logging.h"
 
-DEFINE_string(model, "model.onnx", "Source model name");
+ABSL_FLAG(std::string, model, "model.onnx", "Source model name");
 
 #define COND_CHECK_EMPTY(cond, message)                                                                                \
   do {                                                                                                                 \
@@ -100,13 +101,13 @@ OptimizationContext::~OptimizationContext() {
 }
 
 std::string OptimizationContext::optimize() {
-  auto target = (path_engine / FLAGS_model).replace_extension();
+  auto target = (path_engine / absl::GetFlag(FLAGS_model)).replace_extension();
   target += config.engine_name();
   if (exists(target)) {
     return "";
   }
 
-  auto source_file = (path_prefix / FLAGS_model).replace_extension(".onnx");
+  auto source_file = (path_prefix / absl::GetFlag(FLAGS_model)).replace_extension(".onnx");
   std::ifstream input(source_file, std::ios::binary | std::ios::in);
   COND_CHECK_EMPTY(input.is_open(), "source model file not exist: " << source_file);
   std::vector<uint8_t> source(std::filesystem::file_size(source_file));

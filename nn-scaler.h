@@ -20,7 +20,7 @@ static double elapsed(hr_clock::time_point start) {
 
 std::string save_image_png(const std::filesystem::path &file, md_view<uint8_t, 3> data);
 
-constexpr int32_t MinDimension = 16;
+constexpr uint32_t MinDimension = 16;
 
 struct optimization_axis {
   optimization_axis(int32_t min, int32_t opt, int32_t max) : min(min), opt(opt), max(max) {}
@@ -39,7 +39,7 @@ struct ScalerConfig {
   optimization_axis input_height;
   optimization_axis batch;
 
-  int32_t aux_stream;
+  uint32_t aux_stream;
   bool use_fp16;
   bool external;
   bool low_mem;

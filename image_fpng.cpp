@@ -6,7 +6,7 @@
 #include <fstream>
 
 #include "nn-scaler.h"
-#include "fpng/fpng.h"
+#include "fpng.h"
 
 static std::once_flag fpng_inited;
 
