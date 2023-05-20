@@ -39,7 +39,7 @@ struct ScalerConfig {
   optimization_axis input_height;
   optimization_axis batch;
 
-  uint32_t aux_stream;
+  int32_t aux_stream;
   bool use_fp16;
   bool external;
   bool low_mem;

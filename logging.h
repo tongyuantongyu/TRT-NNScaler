@@ -32,10 +32,10 @@ class Logger : public nvinfer1::ILogger {
         LOG(WARNING) << "[TRT] " << msg;
         break;
       case Severity::kINFO:
-        VLOG(1) << "[TRT] [I] " << msg;
+        VLOG(2) << "[TRT] [I] " << msg;
         break;
       case Severity::kVERBOSE:
-        VLOG(3) << "[TRT] [V] " << msg;
+        VLOG(4) << "[TRT] [V] " << msg;
         break;
     }
   }

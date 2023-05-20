@@ -165,7 +165,7 @@ static void image_load_worker(chan &in, ichan &out) {
         .out_image = out_view.as_uview(),
         .out_memory = std::move(out_ptr),
     });
-    VLOG(2) << "Image " << o(c.output) << " sent.";
+    VLOG(3) << "Image " << o(c.output) << " sent.";
   }
 
   out.close();
@@ -251,11 +251,11 @@ static void pixel_import_worker(ichan &in, ichan &out) {
                     case 2:
                       ret = importer_gpu_fp16->import_alpha<uint8_t>(input_tensor_fp16, input_tile, session->stream); break;
                     default:
-                      LOG(FATAL) << "Unknown IO mode.";
+                      LOG(QFATAL) << "Unknown IO mode.";
                   }
 
                   if (!ret.empty()) {
-                    LOG(FATAL) << "Unexpected error importing pixel: " << ret;
+                    LOG(QFATAL) << "Unexpected error importing pixel: " << ret;
                   }
 
                   WorkContextInternal tile_ctx = {
@@ -273,7 +273,7 @@ static void pixel_import_worker(ichan &in, ichan &out) {
                     first_tile = false;
                   }
 
-                  VLOG(2) << "Tile "
+                  VLOG(3) << "Tile "
                           << std::setw(4) << tw << 'x'
                           << std::setw(4) << th << '+'
                           << std::setw(4) << x << '+'
@@ -284,7 +284,7 @@ static void pixel_import_worker(ichan &in, ichan &out) {
                   out.put(std::move(tile_ctx));
                   input_done.get();
 
-                  VLOG(2) << "Tile "
+                  VLOG(3) << "Tile "
                           << std::setw(4) << tw << 'x'
                           << std::setw(4) << th << '+'
                           << std::setw(4) << x << '+'
@@ -302,11 +302,11 @@ static void pixel_import_worker(ichan &in, ichan &out) {
                   case 2:
                     ret = importer_gpu_fp16->import_color<uint8_t>(input_tensor_fp16, input_tile, session->stream); break;
                   default:
-                    LOG(FATAL) << "Unknown IO mode.";
+                    LOG(QFATAL) << "Unknown IO mode.";
                 }
 
                 if (!ret.empty()) {
-                  LOG(FATAL) << "Unexpected error importing pixel: " << ret;
+                  LOG(QFATAL) << "Unexpected error importing pixel: " << ret;
                 }
 
                 WorkContextInternal tile_ctx{
@@ -317,7 +317,7 @@ static void pixel_import_worker(ichan &in, ichan &out) {
                     .out_image = ctx.out_image,
                 };
 
-                VLOG(2) << "Tile "
+                VLOG(3) << "Tile "
                         << std::setw(4) << tw << 'x'
                         << std::setw(4) << th << '+'
                         << std::setw(4) << x << '+'
@@ -338,7 +338,7 @@ static void pixel_import_worker(ichan &in, ichan &out) {
                 out.put(std::move(tile_ctx));
                 input_done.get();
 
-                VLOG(2) << "Tile "
+                VLOG(3) << "Tile "
                         << std::setw(4) << tw << 'x'
                         << std::setw(4) << th << '+'
                         << std::setw(4) << x << '+'
@@ -367,11 +367,11 @@ static void inference_worker(ichan &in, ichan &out) {
 
     session->config(1, ctx.th, ctx.tw);
     if (!session->inference()) {
-      LOG(FATAL) << "CUDA error during inference: " << cudaGetErrorName(cudaGetLastError());
+      LOG(QFATAL) << "CUDA error during inference: " << cudaGetErrorName(cudaGetLastError());
     }
     auto err = cudaEventSynchronize(session->input_consumed);
     if (err != cudaSuccess) {
-      LOG(FATAL) << "CUDA Error: " << cudaGetErrorName(err);
+      LOG(QFATAL) << "CUDA Error: " << cudaGetErrorName(err);
     }
     ctx.input_consumed.set_value();
 
@@ -424,7 +424,7 @@ static void pixel_export_worker(ichan &in, ichan &out) {
         case 2:
           ret = exporter_gpu_fp16->fetch_alpha(output_tensor_fp16, session->stream); break;
         default:
-          LOG(FATAL) << "Unknown IO mode.";
+          LOG(QFATAL) << "Unknown IO mode.";
       }
     }
     else {
@@ -436,16 +436,16 @@ static void pixel_export_worker(ichan &in, ichan &out) {
         case 2:
           ret = exporter_gpu_fp16->fetch_color<uint8_t>(output_tensor_fp16, out_tile, pad_desc, session->stream); break;
         default:
-          LOG(FATAL) << "Unknown IO mode.";
+          LOG(QFATAL) << "Unknown IO mode.";
       }
     }
     if (!ret.empty()) {
-      LOG(FATAL) << "Unexpected error fetching result pixel: " << ret;
+      LOG(QFATAL) << "Unexpected error fetching result pixel: " << ret;
     }
 
     ctx.output_consumed.set_value();
 
-    VLOG(1) << "Tile "
+    VLOG(2) << "Tile "
             << std::setw(4) << ctx.tw << 'x'
             << std::setw(4) << ctx.th << '+'
             << std::setw(4) << ctx.x << '+'
@@ -510,7 +510,7 @@ static void image_save_worker(ichan &in) {
     }
 
     auto err = save_image_png(ctx.output, ctx.out_image.as_view());
-    VLOG(2) << "Image encoded in " << elapsed(start) << "ms";
+    VLOG(1) << "Image " << o(ctx.output) << " saved in " << elapsed(start) << "ms";
 
     auto [h, w, _] = ctx.out_image.shape;
     LOG(INFO) << "Image " << o(ctx.output) << " (" << w << "x" << h << ") finished in " << elapsed(ctx.image_start)

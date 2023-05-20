@@ -89,7 +89,7 @@ static std::string handle_folder(const std::filesystem::path &input, chan &works
     auto target = output / relative(file, input, ec);
     if (!ec) std::filesystem::create_directories(target.parent_path(), ec);
     if (ec) {
-      LOG(FATAL) << "Failed prepare output directory: " << ec;
+      LOG(QFATAL) << "Failed prepare output directory: " << ec;
     }
 
     auto err = handle_image(file, target.replace_extension("png"), works);
@@ -110,7 +110,7 @@ static Logger gLogger;
 ABSL_FLAG(bool, fp16, false, "use FP16 processing");
 ABSL_FLAG(bool, external, false, "use external algorithms from cuDNN and cuBLAS");
 ABSL_FLAG(bool, low_mem, false, "tweak configs to reduce memory consumption");
-ABSL_FLAG(uint32_t, aux_stream, -1, "Auxiliary streams to use");
+ABSL_FLAG(int32_t, aux_stream, -1, "Auxiliary streams to use");
 ABSL_FLAG(std::string, reformatter, "auto", "reformatter used to import and export pixels: cpu, gpu, auto");
 
 ABSL_DECLARE_FLAG(std::string, alpha);
@@ -130,25 +130,25 @@ void verify_flags() {
   auto extensions = absl::GetFlag(FLAGS_extensions);
 
   if (!exists(std::filesystem::path(model_path))) {
-    LOG(FATAL) << "model path " << std::quoted(model_path) << " not exist.";
+    LOG(QFATAL) << "model path " << std::quoted(model_path) << " not exist.";
   }
 
   if (tile_width == 0 || tile_height == 0) {
-    LOG(FATAL) << "Invalid tile size.";
+    LOG(QFATAL) << "Invalid tile size.";
   }
 
   if (tile_pad >= tile_width || tile_pad >= tile_height) {
-    LOG(FATAL) << "Invalid tile pad size.";
+    LOG(QFATAL) << "Invalid tile pad size.";
   }
 
   if (extend_grace >= (tile_width - tile_pad)
       || extend_grace >= (tile_height - tile_pad)) {
-    LOG(FATAL) << "Invalid tile extend grace.";
+    LOG(QFATAL) << "Invalid tile extend grace.";
   }
 
   if (alignment == 0 || tile_width % alignment != 0 || tile_height % alignment != 0
       || tile_pad % alignment != 0 || extend_grace % alignment != 0) {
-    LOG(FATAL) << "Invalid tile alignment.";
+    LOG(QFATAL) << "Invalid tile alignment.";
   }
 
   auto ext_count = std::count(extensions.begin(), extensions.end(), ',');
@@ -157,7 +157,7 @@ void verify_flags() {
   for (int i = 0; i < ext_count; ++i) {
     auto comma_pos = exts.back().find(',');
     if (comma_pos == 0 || comma_pos == std::string_view::npos) {
-      LOG(FATAL) << "Invalid extension list";
+      LOG(QFATAL) << "Invalid extension list";
     }
     auto &split = exts.back();
     std::back_inserter(exts) = split.substr(comma_pos + 1);
@@ -235,14 +235,14 @@ int wmain(int argc, wchar_t **wargv) {
   std::filesystem::path output = absl::GetFlag(FLAGS_output);
   std::filesystem::create_directories(output, ec);
   if (ec) {
-    LOG(FATAL) << "Failed ensure output folder: " << ec;
+    LOG(QFATAL) << "Failed ensure output folder: " << ec;
   }
 
   // ----------------------------------
   // IO
   auto err = init_image_io();
   if (!err.empty()) {
-    LOG(FATAL) << "Failed init Image IO: " << err;
+    LOG(QFATAL) << "Failed init Image IO: " << err;
     return 1;
   }
 
@@ -284,28 +284,28 @@ int wmain(int argc, wchar_t **wargv) {
                  "Some errors may occur, but as long as there are no fatal ones, this will be fine.";
     err = OptimizationContext(ctx.config, gLogger, absl::GetFlag(FLAGS_model_path)).optimize();
     if (!err.empty()) {
-      LOG(FATAL) << "Failed building optimized engine: " << err;
+      LOG(QFATAL) << "Failed building optimized engine: " << err;
     }
   }
 
   err = ctx.load_engine();
   if (!err.empty()) {
-    LOG(FATAL) << "Failed loading engine: " << err;
+    LOG(QFATAL) << "Failed loading engine: " << err;
   }
 
   session = new InferenceSession(ctx);
   session->config(1, absl::GetFlag(FLAGS_tile_height), absl::GetFlag(FLAGS_tile_width));
   err = session->allocation();
   if (!err.empty()) {
-    LOG(FATAL) << "Failed initialize context: " << err;
+    LOG(QFATAL) << "Failed initialize context: " << err;
   }
   std::tie(h_scale, w_scale) = session->detect_scale();
   if (h_scale == -1 || w_scale == -1) {
-    LOG(FATAL) << "Bad model, can't detect scale ratio.";
+    LOG(QFATAL) << "Bad model, can't detect scale ratio.";
   }
 
   if (h_scale != w_scale) {
-    LOG(FATAL) << "different width and height scale ratio unimplemented.";
+    LOG(QFATAL) << "different width and height scale ratio unimplemented.";
   }
 
   // ------------------------------
@@ -313,10 +313,10 @@ int wmain(int argc, wchar_t **wargv) {
   auto max_size = size_t(max_width) * max_height;
 
   if (absl::GetFlag(FLAGS_reformatter) == "auto") {
-    absl::GetFlag(FLAGS_reformatter) = absl::GetFlag(FLAGS_fp16) ? "gpu" : "cpu";
+    absl::SetFlag(&FLAGS_reformatter, absl::GetFlag(FLAGS_fp16) ? "gpu" : "cpu");
   }
   if (absl::GetFlag(FLAGS_fp16) && absl::GetFlag(FLAGS_reformatter) == "cpu") {
-    LOG(FATAL) << "CPU reformatter can not handle FP16.";
+    LOG(QFATAL) << "CPU reformatter can not handle FP16.";
   }
 
   if (absl::GetFlag(FLAGS_reformatter) == "cpu") {
@@ -339,7 +339,7 @@ int wmain(int argc, wchar_t **wargv) {
     }
   }
   else {
-    LOG(FATAL) << "Unknown reformatter.";
+    LOG(QFATAL) << "Unknown reformatter.";
   }
 
   chan works;
