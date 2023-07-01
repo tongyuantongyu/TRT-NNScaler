@@ -60,6 +60,7 @@ ABSL_FLAG(std::string, extensions, "jpg,png", "extensions that should be process
 ABSL_FLAG(std::string, output, "output", "path to the folder to save processed results");
 constexpr char output_default[] = "output";
 
+static std::string exts_storage;
 static std::vector<std::string_view> exts;
 
 static std::string handle_folder(const std::filesystem::path &input, chan &works, bool spread) {
@@ -127,7 +128,7 @@ void verify_flags() {
   auto tile_pad = absl::GetFlag(FLAGS_tile_pad);
   auto extend_grace = absl::GetFlag(FLAGS_extend_grace);
   auto alignment = absl::GetFlag(FLAGS_alignment);
-  auto extensions = absl::GetFlag(FLAGS_extensions);
+  exts_storage = absl::GetFlag(FLAGS_extensions);
 
   if (!exists(std::filesystem::path(model_path))) {
     LOG(QFATAL) << "model path " << std::quoted(model_path) << " not exist.";
@@ -151,9 +152,9 @@ void verify_flags() {
     LOG(QFATAL) << "Invalid tile alignment.";
   }
 
-  auto ext_count = std::count(extensions.begin(), extensions.end(), ',');
+  auto ext_count = std::count(exts_storage.begin(), exts_storage.end(), ',');
   exts.reserve(ext_count + 1);
-  exts.emplace_back(extensions);
+  exts.emplace_back(exts_storage);
   for (int i = 0; i < ext_count; ++i) {
     auto comma_pos = exts.back().find(',');
     if (comma_pos == 0 || comma_pos == std::string_view::npos) {
