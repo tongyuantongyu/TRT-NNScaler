@@ -6,6 +6,7 @@
 #include <variant>
 #include <filesystem>
 
+#include "nn-scaler.h"
 #include "md_view.h"
 
 std::string init_image_io();
@@ -28,5 +29,6 @@ static std::pair<md_view<U, sizeof...(D)>, mem_owner> alloc_buffer(D... d) {
 }
 
 std::variant<std::pair<shape_t<3>, mem_owner>, std::string>
-    load_image(const std::filesystem::path &file, bool ignore_alpha);
-std::string save_image(const std::filesystem::path &file, md_view<uint8_t, 3> data);
+load_image(Work::input_t file, bool ignore_alpha);
+std::string save_image(Work::output_t file, md_view<uint8_t, 3> data);
+std::string save_image_png(Work::output_t file, md_view<uint8_t, 3> data);

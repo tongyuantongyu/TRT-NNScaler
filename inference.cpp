@@ -1,4 +1,5 @@
 #include "nn-scaler.h"
+#include "infer_engine.h"
 
 #include "absl/flags/flag.h"
 #include "absl/flags/declare.h"

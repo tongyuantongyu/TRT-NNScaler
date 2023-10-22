@@ -4,7 +4,7 @@
 
 #include <fstream>
 
-#include "nn-scaler.h"
+#include "infer_engine.h"
 #include "NvOnnxParser.h"
 
 #include "absl/flags/flag.h"

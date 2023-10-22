@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package scaler_server;
+
+message ScaleRequest {
+  bytes data = 1;
+
+  string alpha_mode = 10;
+  double pre_scale = 11;
+  double post_scale = 12;
+}
+
+message ScaleResponse {
+  oneof result {
+    bytes data = 1;
+    string error = 2;
+  }
+}
+
+service NNScaler {
+  rpc Process(ScaleRequest) returns (ScaleResponse) {}
+}

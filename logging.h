@@ -43,8 +43,14 @@ class Logger : public nvinfer1::ILogger {
 
 static std::string u8s(const std::filesystem::path& p) {
 #ifdef _WIN32
+#ifdef __cpp_lib_char8_t
   std::u8string s = p.generic_u8string();
-  return std::move(*reinterpret_cast<std::string*>(&s));
+  std::string r(s.size(), '\0');
+  memcpy(r.data(), s.data(), s.size());
+  return std::move(r);
+#else
+  return p.generic_u8string();
+#endif
 #else
   return p.string();
 #endif

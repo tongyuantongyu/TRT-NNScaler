@@ -14,6 +14,7 @@
 #include <format>
 #include <memory>
 #include <iostream>
+#include <charconv>
 
 #define HR_CHECK(A) \
     do { \
@@ -24,6 +25,12 @@
     } while (0)
 
 IWICImagingFactory *pFactory;
+
+std::string format_hresult(HRESULT hr) {
+  char buf[15] = "0000000";
+  auto result = std::to_chars(buf + 7, buf + 15, uint32_t(hr), 16);
+  return {result.ptr - 8, 8};
+}
 
 std::string init_image_io() {
   HRESULT hr;
@@ -37,7 +44,7 @@ std::string init_image_io() {
 
   finish:
   if (FAILED(hr)) {
-    return std::format("WINAPI failure: {:#08x}", hr);
+    return "WINAPI failure: " + format_hresult(hr);
   }
 
   return "";
@@ -75,7 +82,8 @@ static GUID desire_format_opaque = GUID_WICPixelFormat24bppBGR;
 static GUID desire_format_alpha = GUID_WICPixelFormat32bppPBGRA;
 
 std::variant<std::pair<shape_t<3>, mem_owner>, std::string>
-load_image(const std::filesystem::path &file, bool ignore_alpha) {
+load_image(Work::input_t file, bool ignore_alpha) {
+  IStream *pStream = nullptr;
   IWICBitmapDecoder *pDecoder = nullptr;
   IWICBitmapFrameDecode *pFrame = nullptr;
   IWICFormatConverter *pConverter = nullptr;
@@ -83,19 +91,24 @@ load_image(const std::filesystem::path &file, bool ignore_alpha) {
   md_view<uint8_t, 3> view;
   mem_owner pixels;
 
-  HANDLE f = CreateFileW(file.wstring().c_str(),
-                         GENERIC_READ,
-                         FILE_SHARE_READ,
-                         nullptr,
-                         OPEN_EXISTING,
-                         FILE_ATTRIBUTE_NORMAL,
-                         nullptr);
-  if (f == INVALID_HANDLE_VALUE) {
-    return "can't open file";
+  if (file.index() == 0) {
+    HR_CHECK(pFactory->CreateDecoderFromFilename(std::get<0>(file).c_str(),
+                                                 nullptr,
+                                                 GENERIC_READ,
+                                                 WICDecodeMetadataCacheOnDemand,
+                                                 &pDecoder));
+  }
+  else {
+    auto pVec = std::get_if<1>(&file);
+    if (pVec == nullptr) {
+      return "unexpected input";
+    }
+
+    pStream = SHCreateMemStream(pVec->data(), pVec->size());
+    HR_CHECK(pFactory->CreateDecoderFromStream(pStream, nullptr, WICDecodeMetadataCacheOnDemand, &pDecoder));
   }
 
   {
-    HR_CHECK(pFactory->CreateDecoderFromFileHandle((ULONG_PTR) f, nullptr, WICDecodeMetadataCacheOnDemand, &pDecoder));
     HR_CHECK(pDecoder->GetFrame(0, &pFrame));
 
     UINT width, height;
@@ -131,28 +144,33 @@ load_image(const std::filesystem::path &file, bool ignore_alpha) {
   }
 
   finish:
+  pStream && pStream->Release();
   pConverter && pConverter->Release();
   pFrame && pFrame->Release();
   pDecoder && pDecoder->Release();
 
   if (FAILED(hr)) {
-    return std::format("WINAPI failure: {:#08x}", hr);
+    return "WINAPI failure: " + format_hresult(hr);
   }
 
   return std::make_pair(view.shape, std::move(pixels));
 }
 
-std::string save_image(const std::filesystem::path& file, md_view<uint8_t, 3> data) {
+std::string save_image(Work::output_t file, md_view<uint8_t, 3> data) {
   IWICStream *pStream = nullptr;
   IWICBitmapEncoder *pEncoder = nullptr;
   IWICBitmapFrameEncode *pFrame = nullptr;
   IWICBitmap *pSource = nullptr;
   HRESULT hr;
 
+  if (file.index() != 0) {
+    return "unimplemented";
+  }
+
   {
     HR_CHECK(pFactory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &pEncoder));
     HR_CHECK(pFactory->CreateStream(&pStream));
-    HR_CHECK(pStream->InitializeFromFilename(file.wstring().c_str(), GENERIC_WRITE));
+    HR_CHECK(pStream->InitializeFromFilename(std::get<0>(file).c_str(), GENERIC_WRITE));
     HR_CHECK(pEncoder->Initialize(pStream, WICBitmapEncoderNoCache));
     HR_CHECK(pEncoder->CreateNewFrame(&pFrame, nullptr));
     HR_CHECK(pFrame->Initialize(nullptr));
@@ -181,7 +199,7 @@ std::string save_image(const std::filesystem::path& file, md_view<uint8_t, 3> da
   pEncoder && pEncoder->Release();
 
   if (FAILED(hr)) {
-    return std::format("WINAPI failure: {:#08x}", hr);
+    return "WINAPI failure: " + format_hresult(hr);
   }
 
   return "";

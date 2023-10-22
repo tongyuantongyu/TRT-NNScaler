@@ -10,13 +10,8 @@
 
 static std::once_flag fpng_inited;
 
-std::string save_image_png(const std::filesystem::path& file, md_view<uint8_t, 3> data) {
+std::string save_image_png(Work::output_t file, md_view<uint8_t, 3> data) {
   std::call_once(fpng_inited, fpng::fpng_init);
-
-  std::ofstream of(file, std::ios::out | std::ios::binary | std::ios::trunc);
-  if (!of.is_open()) {
-    return "can't open output file";
-  }
 
   auto [height, width, components] = data.shape;
   std::vector<uint8_t> output;
@@ -24,7 +19,18 @@ std::string save_image_png(const std::filesystem::path& file, md_view<uint8_t, 3
     return "fpng encode fail";
   };
 
-  of.write(reinterpret_cast<char *>(output.data()), output.size());
+  if (file.index() == 0) {
+    std::ofstream of(std::get<0>(file), std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!of.is_open()) {
+      return "can't open output file";
+    }
+
+    of.write(reinterpret_cast<char *>(output.data()), output.size());
+  } else if (file.index() == 1) {
+    std::get<1>(file).set_value(std::move(output));
+  } else {
+    return "unexpected";
+  }
 
   return "";
 }

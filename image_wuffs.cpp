@@ -24,6 +24,7 @@
 #include <cmath>
 #include <fstream>
 #include <optional>
+#include <vector>
 
 #include "jpeglib.h"
 #include <setjmp.h>
@@ -141,7 +142,7 @@ my_error_exit (j_common_ptr cinfo)
 }
 
 std::optional<std::pair<shape_t<3>, mem_owner>>
-load_image_jpeg(FILE * f) {
+load_image_jpeg(std::variant<FILE *, std::vector<uint8_t>> f) {
   struct jpeg_decompress_struct cinfo;
   struct my_error_mgr jerr;
   JSAMPARRAY buffer;
@@ -155,7 +156,14 @@ load_image_jpeg(FILE * f) {
   }
 
   jpeg_create_decompress(&cinfo);
-  jpeg_stdio_src(&cinfo, f);
+  if (f.index() == 0) {
+    jpeg_stdio_src(&cinfo, std::get<0>(f));
+  }
+  else {
+    auto &vec = std::get<1>(f);
+    jpeg_mem_src(&cinfo, vec.data(), vec.size());
+  }
+
   (void) jpeg_read_header(&cinfo, TRUE);
   cinfo.out_color_space = JCS_EXT_BGR;
   (void) jpeg_start_decompress(&cinfo);
@@ -176,20 +184,24 @@ load_image_jpeg(FILE * f) {
 }
 
 std::variant<std::pair<shape_t<3>, mem_owner>, std::string>
-load_image(const std::filesystem::path &file, bool ignore_alpha) {
+load_image(Work::input_t file, bool ignore_alpha) {
+  wuffs_aux::DecodeImageResult res("");
+  if (file.index() == 0) {
+    auto name = std::get<0>(file);
   FILE *f = nullptr;
 #ifdef _WIN32
-  _wfopen_s(&f, file.c_str(), L"rb");
+    _wfopen_s(&f, name.c_str(), L"rb");
 #else
-  f = fopen64(file.c_str(), "rb");
+    f = fopen64(name.c_str(), "rb");
 #endif
   if (f == nullptr) {
     return "can't open file";
   }
 
   wuffs_aux::sync_io::FileInput input(f);
-  MyDecodeImageCallbacks callbacks(ignore_alpha);
-  wuffs_aux::DecodeImageResult res = wuffs_aux::DecodeImage(
+
+    MyDecodeImageCallbacks callbacks(ignore_alpha);
+    res = wuffs_aux::DecodeImage(
       callbacks,
       input,
       wuffs_aux::DecodeImageArgQuirks::DefaultValue(),
@@ -208,7 +220,34 @@ load_image(const std::filesystem::path &file, bool ignore_alpha) {
     return "failed decoding image: " + res.error_message;
   }
 
-  fclose(f);
+    fclose(f);
+  }
+  else {
+    auto pVec = std::get_if<1>(&file);
+    if (pVec == nullptr) {
+      return "unexpected input";
+    }
+
+    wuffs_aux::sync_io::MemoryInput input(pVec->data(), pVec->size());
+
+    MyDecodeImageCallbacks callbacks(ignore_alpha);
+    res = wuffs_aux::DecodeImage(
+        callbacks,
+        input,
+        wuffs_aux::DecodeImageArgQuirks::DefaultValue(),
+        wuffs_aux::DecodeImageArgFlags(wuffs_aux::DecodeImageArgFlags::REPORT_METADATA_GAMA));
+
+    if (!res.error_message.empty()) {
+      if (res.error_message == wuffs_aux::DecodeImage_UnsupportedImageFormat) {
+        auto result = load_image_jpeg(std::move(*pVec));
+        if (result) {
+          return std::move(*result);
+        }
+      }
+
+    return "failed decoding image: " + res.error_message;
+    }
+  }
 
   md_view in_view{reinterpret_cast<uint8_t *>(res.pixbuf_mem_owner.get()),
                   {res.pixbuf.pixcfg.height(),

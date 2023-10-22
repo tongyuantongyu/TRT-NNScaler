@@ -5,10 +5,10 @@ cmake_policy(SET CMP0097 NEW)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CUDA_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CUDA_STANDARD 17)
 
-project(TRT-NNScaler LANGUAGES CXX)
+project(TRT-NNScaler LANGUAGES C CXX)
 
 if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     if (CMAKE_SYSTEM_PROCESSOR STREQUAL aarch64)
@@ -24,6 +24,7 @@ if (MSVC)
 endif ()
 
 option(LOCAL_DEPENDENCIES "Build dependencies locally" OFF)
+option(WITH_RPC_SERVICE "Build RPC service" ON)
 
 if (WIN32)
     option(USE_WIC_READER "Use WIC to read images" ON)
@@ -45,40 +46,32 @@ FetchContent_Declare(
 FetchContent_Declare(
         wuffs
         GIT_REPOSITORY https://github.com/google/wuffs-mirror-release-c
-        GIT_TAG        e3f919ccfe3ef542cfc983a82146070258fb57f8
+        GIT_TAG v0.3.3
         GIT_PROGRESS   TRUE
 )
 
 FetchContent_Declare(
         abseil
         GIT_REPOSITORY https://github.com/abseil/abseil-cpp
-        GIT_TAG        20230125.3
+        GIT_TAG 20230802.1
         GIT_SHALLOW    TRUE
         GIT_PROGRESS   TRUE
-)
-
-FetchContent_Declare(
-        protobuf
-        GIT_REPOSITORY https://github.com/protocolbuffers/protobuf
-        GIT_TAG        v23.1
-        GIT_SHALLOW    TRUE
-        GIT_PROGRESS   TRUE
-        GIT_SUBMODULES "third_party/jsoncpp"
+        OVERRIDE_FIND_PACKAGE
 )
 
 FetchContent_Declare(
         grpc
         GIT_REPOSITORY https://github.com/grpc/grpc
-        GIT_TAG        v1.55.0
+        GIT_TAG v1.59.1
         GIT_SHALLOW    TRUE
         GIT_PROGRESS   TRUE
-        GIT_SUBMODULES "third_party/boringssl-with-bazel;third_party/cares/cares;third_party/libuv;third_party/re2;third_party/zlib;third_party/envoy-api;third_party/googleapis;third_party/opencensus-proto;third_party/xds"
+        GIT_SUBMODULES "third_party/boringssl-with-bazel;third_party/cares/cares;third_party/re2;third_party/zlib;third_party/envoy-api;third_party/googleapis;third_party/opencensus-proto;third_party/xds;third_party/protobuf"
 )
 
 FetchContent_Declare(
         libyuv
         GIT_REPOSITORY https://chromium.googlesource.com/libyuv/libyuv
-        GIT_TAG        8670bcf17faca69603d2d49fa6ebd0e45123471f
+        GIT_TAG 331c361581896292fb46c8c6905e41262b7ca95f
         GIT_PROGRESS   TRUE
 )
 
@@ -110,45 +103,52 @@ endif()
 if (LOCAL_DEPENDENCIES)
     set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
-    set(ABSL_PROPAGATE_CXX_STD 1)
+    if (WITH_RPC_SERVICE)
+        set(ABSL_PROPAGATE_CXX_STD 1)
 
-    FetchContent_GetProperties(abseil)
-    if(NOT abseil_POPULATED)
-        FetchContent_Populate(abseil)
-        add_subdirectory(${abseil_SOURCE_DIR} ${abseil_BINARY_DIR} EXCLUDE_FROM_ALL)
-    endif()
+        FetchContent_GetProperties(abseil)
+        if (NOT abseil_POPULATED)
+            FetchContent_Populate(abseil)
+            add_subdirectory(${abseil_SOURCE_DIR} ${abseil_BINARY_DIR} EXCLUDE_FROM_ALL)
+        endif ()
 
-    set(protobuf_INSTALL 0)
-    set(protobuf_BUILD_TESTS 0)
-    set(protobuf_BUILD_CONFORMANCE 0)
-    set(protobuf_BUILD_EXAMPLES 0)
-    set(protobuf_BUILD_SHARED_LIBS 0)
-    set(utf8_range_ENABLE_TESTS 0)
-    set(utf8_range_ENABLE_INSTALL 0)
+        set(protobuf_INSTALL OFF)
+        set(protobuf_BUILD_TESTS OFF)
+        set(protobuf_BUILD_CONFORMANCE OFF)
+        set(protobuf_BUILD_EXAMPLES OFF)
+        set(protobuf_BUILD_SHARED_LIBS OFF)
+        set(protobuf_WITH_ZLIB OFF)
+        set(protobuf_MSVC_STATIC_RUNTIME OFF)
+        set(utf8_range_ENABLE_TESTS OFF)
+        set(utf8_range_ENABLE_INSTALL OFF)
 
-    FetchContent_GetProperties(protobuf)
-    if(NOT protobuf_POPULATED)
-        FetchContent_Populate(protobuf)
-        add_subdirectory(${protobuf_SOURCE_DIR} ${protobuf_BINARY_DIR} EXCLUDE_FROM_ALL)
-    endif()
+        set(gRPC_BUILD_TESTS OFF)
+        set(gRPC_BUILD_CSHARP_EXT OFF)
+        set(gRPC_INSTALL OFF)
+        set(gRPC_USE_PROTO_LITE ON)
+        set(gRPC_BUILD_GRPC_CSHARP_PLUGIN OFF)
+        set(gRPC_BUILD_GRPC_NODE_PLUGIN OFF)
+        set(gRPC_BUILD_GRPC_OBJECTIVE_C_PLUGIN OFF)
+        set(gRPC_BUILD_GRPC_PHP_PLUGIN OFF)
+        set(gRPC_BUILD_GRPC_PYTHON_PLUGIN OFF)
+        set(gRPC_BUILD_GRPC_RUBY_PLUGIN OFF)
+        set(gRPC_PROTOBUF_PROVIDER "module")
+        set(gRPC_ABSL_PROVIDER "package")
+        set(gRPC_ZLIB_PROVIDER "module")
 
-    set(gRPC_BUILD_TESTS 0)
-    set(gRPC_BUILD_CSHARP_EXT 0)
-    set(gRPC_INSTALL 0)
-    set(gRPC_USE_PROTO_LITE 1)
-    set(gRPC_BUILD_GRPC_CSHARP_PLUGIN 0)
-    set(gRPC_BUILD_GRPC_NODE_PLUGIN 0)
-    set(gRPC_BUILD_GRPC_OBJECTIVE_C_PLUGIN 0)
-    set(gRPC_BUILD_GRPC_PHP_PLUGIN 0)
-    set(gRPC_BUILD_GRPC_PYTHON_PLUGIN 0)
-    set(gRPC_BUILD_GRPC_RUBY_PLUGIN 0)
-    set(gRPC_PROTOBUF_PROVIDER "package")
-    set(gRPC_ABSL_PROVIDER "package")
-
-    FetchContent_GetProperties(grpc)
-    if(NOT grpc_POPULATED)
-        FetchContent_Populate(grpc)
-        add_subdirectory(${grpc_SOURCE_DIR} ${grpc_BINARY_DIR} EXCLUDE_FROM_ALL)
+        FetchContent_GetProperties(grpc)
+        if (NOT grpc_POPULATED)
+            FetchContent_Populate(grpc)
+            add_subdirectory(${grpc_SOURCE_DIR} ${grpc_BINARY_DIR} EXCLUDE_FROM_ALL)
+            # Have totally no idea why I need to do this.
+            include(${grpc_SOURCE_DIR}/third_party/protobuf/cmake/protobuf-generate.cmake)
+        endif ()
+        if (NOT TARGET gRPC::grpc++)
+            add_library(gRPC::grpc++ ALIAS grpc++)
+        endif ()
+        if (NOT TARGET gRPC::grpc_cpp_plugin)
+            add_executable(gRPC::grpc_cpp_plugin ALIAS grpc_cpp_plugin)
+        endif ()
     endif()
 
     FetchContent_GetProperties(libyuv)
@@ -157,9 +157,11 @@ if (LOCAL_DEPENDENCIES)
         add_subdirectory(${libyuv_SOURCE_DIR} ${libyuv_BINARY_DIR} EXCLUDE_FROM_ALL)
     endif()
 else()
-    find_library(abseil REQUIRED)
-    find_library(grpc REQUIRED)
-    find_library(libyuv REQUIRED)
+    if (WITH_RPC_SERVICE)
+        find_package(absl REQUIRED)
+        find_package(grpc REQUIRED)
+    endif ()
+    find_package(libyuv REQUIRED)
 endif()
 
 find_package(CUDAToolkit 12.0 REQUIRED)
@@ -173,7 +175,7 @@ add_library(reformat_cuda STATIC reformat/reformat_cuda.h reformat/reformat.cu)
 add_library(reformat INTERFACE reformat/reformat.h reformat/reformat_cuda.h)
 target_link_libraries(reformat INTERFACE CUDA::cudart reformat_cuda)
 
-set(SOURCE_FILES
+add_library(cmd_common STATIC
         md_view.h
         nn-scaler.h
         logging.h
@@ -183,13 +185,11 @@ set(SOURCE_FILES
         inference.cpp
         image_fpng.cpp
         workers.cpp
-        main.cpp
-        )
+        cmd_common.h)
 
-add_executable(nn-scaler ${SOURCE_FILES})
-target_compile_definitions(nn-scaler PRIVATE _UNICODE)
-target_compile_options(nn-scaler PRIVATE -mavx2 -mfma)
-target_link_libraries(nn-scaler PUBLIC
+target_compile_definitions(cmd_common PUBLIC _UNICODE)
+target_compile_options(cmd_common PRIVATE -mavx2 -mfma)
+target_link_libraries(cmd_common PUBLIC
         image_fpng
         reformat
 
@@ -197,7 +197,6 @@ target_link_libraries(nn-scaler PUBLIC
 
         CUDA::cudart
         TensorRT::NvInfer
-        TensorRT::OnnxParser
 
         absl::flags
         absl::flags_parse
@@ -206,25 +205,70 @@ target_link_libraries(nn-scaler PUBLIC
         absl::log
         absl::log_flags
         absl::log_initialize
-        )
-target_include_directories(nn-scaler PRIVATE ${libyuv_SOURCE_DIR}/include)
-set_target_properties(nn-scaler PROPERTIES
-        OUTPUT_NAME NNScaler
-        )
+)
+target_include_directories(cmd_common PRIVATE ${libyuv_SOURCE_DIR}/include)
 
 if (WIN32 AND USE_WIC_READER)
     add_library(image_wic OBJECT image_wic.cpp image_io.h)
     target_link_libraries(image_wic PUBLIC shlwapi windowscodecs)
 
-    target_link_libraries(nn-scaler PUBLIC image_wic)
+    target_link_libraries(cmd_common PUBLIC image_wic)
 elseif (USE_WUFFS_LIBJPEG_READER)
-    add_library(image_wuffs OBJECT image_io.h image_wuffs.cpp)
-    find_package(PkgConfig)
-    pkg_check_modules(JPEG REQUIRED IMPORTED_TARGET libjpeg)
-    target_link_libraries(image_wuffs PUBLIC PkgConfig::JPEG)
-
-    target_link_libraries(nn-scaler PUBLIC image_wuffs)
+    target_link_libraries(cmd_common PUBLIC image_wuffs)
 endif()
+
+# Command line tool
+
+add_executable(nn-scaler scaler_tool.cpp)
+target_link_libraries(nn-scaler PUBLIC cmd_common TensorRT::OnnxParser)
+set_target_properties(nn-scaler PROPERTIES
+        OUTPUT_NAME NNScaler
+)
+
+# RPC Server
+
+if (WITH_RPC_SERVICE)
+
+    add_library(scaler-proto OBJECT scaler_server.proto)
+    target_link_libraries(scaler-proto PUBLIC protobuf::libprotobuf gRPC::grpc++)
+
+    set(PROTO_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
+    target_include_directories(scaler-proto PUBLIC "$<BUILD_INTERFACE:${PROTO_BINARY_DIR}>")
+    target_compile_options(scaler-proto PUBLIC -Wno-inconsistent-missing-override)
+
+    protobuf_generate(
+            TARGET scaler-proto
+            PROTOC_OUT_DIR "${PROTO_BINARY_DIR}")
+
+    protobuf_generate(
+            TARGET scaler-proto
+            LANGUAGE grpc
+            GENERATE_EXTENSIONS .grpc.pb.h .grpc.pb.cc
+            PLUGIN "protoc-gen-grpc=\$<TARGET_FILE:gRPC::grpc_cpp_plugin>"
+            PROTOC_OUT_DIR "${PROTO_BINARY_DIR}")
+
+    add_executable(nn-scaler-server scaler_server.cpp)
+    target_link_libraries(nn-scaler-server PUBLIC cmd_common scaler-proto)
+    set_target_properties(nn-scaler-server PROPERTIES
+            OUTPUT_NAME NNScalerServer
+    )
+
+    if (MSVC)
+        target_link_libraries(nn-scaler-server PUBLIC delayimp TensorRT::OnnxParser)
+        target_link_options(nn-scaler-server PUBLIC
+                /DELAYLOAD:nvonnxparser.dll)
+    elseif (UNIX)
+        enable_language(ASM)
+        add_library(_onnx_parser_shim OBJECT
+                nvonnxparser_shim/libnvonnxparser.so.init.c
+                nvonnxparser_shim/libnvonnxparser.so.tramp.S)
+        target_link_libraries(nn-scaler-server PUBLIC _onnx_parser_shim)
+    endif ()
+
+endif ()
+
+# Model inspector
 
 add_executable(inspector inspector.cpp)
 target_link_libraries(inspector PUBLIC

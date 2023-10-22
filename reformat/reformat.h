@@ -18,7 +18,7 @@ class pixel_importer_cpu {
   bool buffer_filled;
   size_t max_size;
 
-  template<std::unsigned_integral U>
+  template<typename U>
   std::string import_pixel(shape_t<2> dst_shape, md_uview<const U, 3> src, cudaStream_t stream, float quant = 0.0);
 
  public:
@@ -29,10 +29,10 @@ class pixel_importer_cpu {
     }
   }
 
-  template<std::unsigned_integral U>
+  template<typename U>
   std::string import_color(md_view<float, 3> dst, md_uview<const U, 3> src, cudaStream_t stream, float quant = 0.0);
 
-  template<std::unsigned_integral U>
+  template<typename U>
   std::string import_alpha(md_view<float, 3> dst, md_uview<const U, 3> src, cudaStream_t stream, float quant = 0.0);
 };
 
@@ -56,7 +56,7 @@ class pixel_exporter_cpu {
     }
   }
 
-  template<std::unsigned_integral U>
+  template<typename U>
   std::string fetch_color(md_view<const float, 3> src,
                           md_uview<U, 3> dst,
                           pad_descriptor pad,
@@ -70,7 +70,7 @@ class pixel_exporter_cpu {
 // ----------
 // Implementation
 
-template<std::unsigned_integral U>
+template<typename U>
 std::string pixel_importer_cpu::import_pixel(shape_t<2> dst_shape,
                                              md_uview<const U, 3> src,
                                              cudaStream_t stream,
@@ -164,7 +164,7 @@ std::string pixel_importer_cpu::import_pixel(shape_t<2> dst_shape,
   return "";
 }
 
-template<std::unsigned_integral U>
+template<typename U>
 std::string pixel_importer_cpu::import_color(md_view<float, 3> dst,
                                              md_uview<const U, 3> src,
                                              cudaStream_t stream,
@@ -190,7 +190,7 @@ std::string pixel_importer_cpu::import_color(md_view<float, 3> dst,
   return "";
 }
 
-template<std::unsigned_integral U>
+template<typename U>
 std::string pixel_importer_cpu::import_alpha(md_view<float, 3> dst,
                                              md_uview<const U, 3> src,
                                              cudaStream_t stream,
@@ -242,7 +242,7 @@ std::string pixel_exporter_cpu::fetch_alpha(md_view<const float, 3> src, cudaStr
   return "";
 }
 
-template<std::unsigned_integral U>
+template<typename U>
 std::string pixel_exporter_cpu::fetch_color(md_view<const float, 3> src,
                                             md_uview<U, 3> dst,
                                             pad_descriptor pad,
@@ -355,7 +355,7 @@ class pixel_importer_gpu {
   bool buffer_filled;
   size_t max_size;
 
-  template<std::unsigned_integral U, std::enable_if_t<sizeof(U) <= eSize, bool> = true>
+  template<typename U, std::enable_if_t<sizeof(U) <= eSize, bool> = true>
   std::string import_pixel(md_view<F, 3> dst,
                            md_view<F, 2> dst_alpha,
                            md_uview<const U, 3> src,
@@ -388,10 +388,10 @@ class pixel_importer_gpu {
     return gpu_buffer != nullptr;
   }
 
-  template<std::unsigned_integral U>
+  template<typename U>
   std::string import_color(md_view<F, 3> dst, md_uview<const U, 3> src, cudaStream_t stream, float quant = 0.0);
 
-  template<std::unsigned_integral U>
+  template<typename U>
   std::string import_alpha(md_view<F, 3> dst, md_uview<const U, 3> src, cudaStream_t stream, float quant = 0.0);
 };
 
@@ -419,7 +419,7 @@ class pixel_exporter_gpu {
     }
   }
 
-  template<std::unsigned_integral U, std::enable_if_t<sizeof(U) <= eSize, bool> = true>
+  template<typename U, std::enable_if_t<sizeof(U) <= eSize, bool> = true>
   std::string fetch_color(md_view<const F, 3> src,
                           md_uview<U, 3> dst,
                           pad_descriptor pad,
@@ -432,7 +432,7 @@ class pixel_exporter_gpu {
 // Implementation
 
 template<typename F, size_t eSize>
-template<std::unsigned_integral U, std::enable_if_t<sizeof(U) <= eSize, bool>>
+template<typename U, std::enable_if_t<sizeof(U) <= eSize, bool>>
 std::string pixel_importer_gpu<F, eSize>::import_pixel(md_view<F, 3> dst,
                                                        md_view<F, 2> dst_alpha,
                                                        md_uview<const U, 3> src,
@@ -473,7 +473,7 @@ std::string pixel_importer_gpu<F, eSize>::import_pixel(md_view<F, 3> dst,
 }
 
 template<typename F, size_t eSize>
-template<std::unsigned_integral U>
+template<typename U>
 std::string pixel_importer_gpu<F, eSize>::import_alpha(md_view<F, 3> dst,
                                                        md_uview<const U, 3> src,
                                                        cudaStream_t stream,
@@ -495,7 +495,7 @@ std::string pixel_importer_gpu<F, eSize>::import_alpha(md_view<F, 3> dst,
 }
 
 template<typename F, size_t eSize>
-template<std::unsigned_integral U>
+template<typename U>
 std::string pixel_importer_gpu<F, eSize>::import_color(md_view<F, 3> dst,
                                                        md_uview<const U, 3> src,
                                                        cudaStream_t stream,
@@ -535,7 +535,7 @@ std::string pixel_exporter_gpu<F, eSize>::fetch_alpha(md_view<const F, 3> src, c
 }
 
 template<typename F, size_t eSize>
-template<std::unsigned_integral U, std::enable_if_t<sizeof(U) <= eSize, bool>>
+template<typename U, std::enable_if_t<sizeof(U) <= eSize, bool>>
 std::string pixel_exporter_gpu<F, eSize>::fetch_color(md_view<const F, 3> src,
                                                       md_uview<U, 3> dst,
                                                       pad_descriptor pad,

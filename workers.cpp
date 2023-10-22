@@ -4,10 +4,10 @@
 
 #include <cmath>
 #include <array>
-#include <iostream>
 #include <utility>
 
 #include "nn-scaler.h"
+#include "infer_engine.h"
 #include "reformat/reformat.h"
 #include "image_io.h"
 
@@ -36,7 +36,9 @@ extern int32_t h_scale, w_scale;
 
 struct WorkContextInternal {
   // filled by launcher
-  std::filesystem::path output;
+  Work::output_t output;
+  std::string alpha_mode;
+  double post_scale;
 
   // filled by image_load
   hr_clock::time_point image_start, tile_start;
@@ -46,7 +48,7 @@ struct WorkContextInternal {
   // filled by pixel_import
   offset_t y, x, th, tw;
   bool h_beg, h_end, w_beg, w_end;
-  bool has_alpha, is_alpha, is_end;
+  bool has_alpha, is_alpha, is_begin, is_end;
   std::promise<void> input_consumed;  // hold by inference
 
   // filled by inference
@@ -60,35 +62,27 @@ struct WorkContextInternal {
 
 typedef channel<WorkContextInternal> ichan;
 
-struct AlphaMode {
-  explicit AlphaMode(std::string m = "nn") : mode(std::move(m)) {}
+std::string input_repr(Work::input_t &input) {
+  static size_t counter = 0;
 
-  std::string mode;
-};
-
-std::string AbslUnparseFlag(AlphaMode m) {
-  return m.mode;
+  if (input.index() == 0) {
+    return u8s(std::get<0>(input));
+  }
+  else {
+    return "<input memory stream #" + std::to_string(counter++) + ">";;
+  }
 }
 
-bool AbslParseFlag(absl::string_view text, AlphaMode* m, std::string* error) {
-  if (!absl::ParseFlag(text, &m->mode, error)) {
-    return false;
+std::string output_repr(Work::output_t &output) {
+  static size_t counter = 0;
+
+  if (output.index() == 0) {
+    return u8s(std::get<0>(output));
   }
-  if (m->mode == "nn" || m->mode == "ignore") {
-    return true;
+  else {
+    return "<output memory stream #" + std::to_string(counter++) + ">";;
   }
-  if (m->mode == "filter") {
-    *error = "filter process mode is unimplemented.";
-    return false;
-  }
-  *error = "invalid value";
-  return false;
 }
-
-ABSL_FLAG(std::string, alpha, "nn", "alpha process mode: nn, filter, ignore");
-
-ABSL_FLAG(double, pre_scale, 1.0, "scale ratio before NN super resolution.");
-ABSL_FLAG(double, post_scale, 1.0, "scale ratio before NN super resolution.");
 
 static void image_load_worker(chan &in, ichan &out) {
   while (true) {
@@ -100,20 +94,21 @@ static void image_load_worker(chan &in, ichan &out) {
     auto c = std::move(*i);
     auto start = hr_clock::now();
 
+    std::string input = input_repr(c.input);
     std::string err;
-    auto img_ret = load_image(c.input, absl::GetFlag(FLAGS_alpha) == "ignore");
+    auto img_ret = load_image(std::move(c.input), c.alpha_mode == "ignore");
 
-    if (get_if<1>(&img_ret)) {
-      c.submitted.set_value("failed reading image: " + get<1>(img_ret));
+    if (std::get_if<1>(&img_ret)) {
+      c.submitted.set_value("failed reading image: " + std::get<1>(img_ret));
       continue;
     }
 
-    auto [in_shape, in_ptr] = std::move(get<0>(img_ret));
+    auto [in_shape, in_ptr] = std::move(std::get<0>(img_ret));
     md_view<uint8_t, 3> in_view{reinterpret_cast<uint8_t *>(in_ptr.get()), in_shape};
-    if (absl::GetFlag(FLAGS_pre_scale) != 1.0) {
+    if (c.pre_scale != 1.0) {
       auto [ho, wo, co] = in_view.shape;
-      offset_t hs = round(absl::GetFlag(FLAGS_pre_scale) * ho);
-      offset_t ws = round(absl::GetFlag(FLAGS_pre_scale) * wo);
+      offset_t hs = round(c.pre_scale * ho);
+      offset_t ws = round(c.pre_scale * wo);
       auto [scaled_view, scaled_ptr] = alloc_buffer<uint8_t>(hs, ws, co);
       if (co == 3) {
         libyuv::RGBScale(in_view.data,
@@ -143,10 +138,12 @@ static void image_load_worker(chan &in, ichan &out) {
 
     auto [h, w, ch] = in_view.shape;
     if (h < MinDimension || w < MinDimension) {
-      LOG(WARNING) << "Skip too small image " << o(c.input) << " (" << w << "x" << h << ")";
+      LOG(WARNING) << "Skip too small image " << input << " (" << w << "x" << h << ")";
+      c.submitted.set_value("too small image");
+      continue;
     }
 
-    VLOG(1) << "Image " << o(c.input) << " loaded in " << elapsed(start) << "ms, dimension: " << w << "x" << h;
+    VLOG(1) << "Image " << input << " loaded in " << elapsed(start) << "ms, dimension: " << w << "x" << h;
 
     auto [out_view, out_ptr] = alloc_buffer<uint8_t>(h_scale * h, w_scale * w, ch);
     c.submitted.set_value("");
@@ -155,8 +152,11 @@ static void image_load_worker(chan &in, ichan &out) {
     memset(out_ptr.get(), 0, in_view.size() * h_scale * w_scale);
 #endif
 
+    std::string output = output_repr(c.output);
     out.put(WorkContextInternal{
-        .output = c.output,
+        .output = std::move(c.output),
+        .alpha_mode = c.alpha_mode,
+        .post_scale = c.post_scale,
 
         .image_start = start,
         .in_image = in_view.as_uview(),
@@ -165,7 +165,7 @@ static void image_load_worker(chan &in, ichan &out) {
         .out_image = out_view.as_uview(),
         .out_memory = std::move(out_ptr),
     });
-    VLOG(3) << "Image " << o(c.output) << " sent.";
+    VLOG(3) << "Image " << output << " sent.";
   }
 
   out.close();
@@ -173,7 +173,7 @@ static void image_load_worker(chan &in, ichan &out) {
 
 // v loaded image
 
-template<std::integral I, typename Task>
+template<typename I, typename Task>
 static bool split_range(I total, I step, I overlap, I grace, Task task) {
   I current = 0, tile;
   bool beg = true, end = false;
@@ -212,8 +212,6 @@ static offset_t align(offset_t n, size_t alignment) {
 }
 
 static void pixel_import_worker(ichan &in, ichan &out) {
-  bool nn_alpha = absl::GetFlag(FLAGS_alpha) == "nn";
-
   while (true) {
     auto i = in.get();
     if (!i) {
@@ -223,7 +221,7 @@ static void pixel_import_worker(ichan &in, ichan &out) {
     auto ctx = std::move(*i);
 
     auto [h, w, c] = ctx.in_image.shape;
-    auto process_alpha = nn_alpha && c == 4;
+    auto process_alpha = ctx.alpha_mode == "nn" && c == 4;
     offset_t h_split = align(h, absl::GetFlag(FLAGS_alignment)), w_split = align(w, absl::GetFlag(FLAGS_alignment));
 
     split_range<offset_t>(
@@ -259,6 +257,7 @@ static void pixel_import_worker(ichan &in, ichan &out) {
                   }
 
                   WorkContextInternal tile_ctx = {
+                      .alpha_mode = ctx.alpha_mode, .post_scale = ctx.post_scale,
                       .tile_start = alpha_start,
                       .y = y, .x = x, .th = th, .tw = tw,
                       .h_beg = h_beg, .h_end = h_end, .w_beg = w_beg, .w_end = w_end,
@@ -267,7 +266,7 @@ static void pixel_import_worker(ichan &in, ichan &out) {
                   };
 
                   if (first_tile) {
-                    tile_ctx.output = ctx.output;
+                    tile_ctx.output = std::move(ctx.output);
                     tile_ctx.image_start = ctx.image_start;
                     tile_ctx.out_memory = std::move(ctx.out_memory);
                     first_tile = false;
@@ -310,6 +309,7 @@ static void pixel_import_worker(ichan &in, ichan &out) {
                 }
 
                 WorkContextInternal tile_ctx{
+                    .alpha_mode = ctx.alpha_mode, .post_scale = ctx.post_scale,
                     .tile_start = tile_start,
                     .y = y, .x = x, .th = th, .tw = tw,
                     .h_beg = h_beg, .h_end = h_end, .w_beg = w_beg, .w_end = w_end,
@@ -325,7 +325,8 @@ static void pixel_import_worker(ichan &in, ichan &out) {
                         << elapsed(tile_start) << "ms";
 
                 if (first_tile) {
-                  tile_ctx.output = ctx.output;
+                  tile_ctx.is_begin = true;
+                  tile_ctx.output = std::move(ctx.output);
                   tile_ctx.image_start = ctx.image_start;
                   tile_ctx.out_memory = std::move(ctx.out_memory);
                 }
@@ -386,7 +387,7 @@ static void inference_worker(ichan &in, ichan &out) {
 // v pixel produced notice (with consumed promise)   ^ fulfill promise
 
 static void pixel_export_worker(ichan &in, ichan &out) {
-  std::filesystem::path output;
+  Work::output_t output;
   hr_clock::time_point start;
   std::unique_ptr<uint8_t[]> in_memory, out_memory;
 
@@ -398,8 +399,8 @@ static void pixel_export_worker(ichan &in, ichan &out) {
 
     auto ctx = std::move(*i);
 
-    if (!ctx.output.empty()) {  // begin of image
-      output.swap(ctx.output);
+    if (ctx.is_begin) {  // begin of image
+      output = std::move(ctx.output);
       start = ctx.image_start;
       out_memory = std::move(ctx.out_memory);
     }
@@ -452,10 +453,8 @@ static void pixel_export_worker(ichan &in, ichan &out) {
             << std::setw(4) << ctx.y << " scale done in "
             << elapsed(ctx.tile_start) << "ms";
 
-
-
     if (ctx.is_end) {
-      ctx.output.swap(output);
+      ctx.output = std::move(output);
       ctx.image_start = start;
       ctx.out_memory = std::move(out_memory);
       out.put(std::move(ctx));
@@ -467,7 +466,7 @@ static void pixel_export_worker(ichan &in, ichan &out) {
 
 // v output image
 
-static void image_save_worker(ichan &in) {
+static void image_save_worker(ichan &in, chan *out) {
   while (true) {
     auto i = in.get();
     if (!i) {
@@ -478,10 +477,10 @@ static void image_save_worker(ichan &in) {
     auto start = hr_clock::now();
     // TODO: wait alpha finish when alpha = filter
 
-    if (absl::GetFlag(FLAGS_post_scale) != 1.0) {
+    if (ctx.post_scale != 1.0) {
       auto [ho, wo, co] = ctx.out_image.shape;
-      offset_t hs = round(absl::GetFlag(FLAGS_post_scale) * ho);
-      offset_t ws = round(absl::GetFlag(FLAGS_post_scale) * wo);
+      offset_t hs = round(ctx.post_scale * ho);
+      offset_t ws = round(ctx.post_scale * wo);
       auto [scaled_view, scaled_ptr] = alloc_buffer<uint8_t, 3>({hs, ws, co});
       if (co == 3) {
         libyuv::RGBScale(ctx.out_image.data,
@@ -509,23 +508,29 @@ static void image_save_worker(ichan &in) {
       ctx.out_memory.swap(scaled_ptr);
     }
 
-    auto err = save_image_png(ctx.output, ctx.out_image.as_view());
-    VLOG(1) << "Image " << o(ctx.output) << " saved in " << elapsed(start) << "ms";
+    std::string output = output_repr(ctx.output);
+    auto err = save_image_png(std::move(ctx.output), ctx.out_image.as_view());
+    if (err.empty()) {
+      VLOG(1) << "Image " << output << " saved in " << elapsed(start) << "ms";
 
-    auto [h, w, _] = ctx.out_image.shape;
-    LOG(INFO) << "Image " << o(ctx.output) << " (" << w << "x" << h << ") finished in " << elapsed(ctx.image_start)
-              << "ms";
+      auto [h, w, _] = ctx.out_image.shape;
+      LOG(INFO) << "Image " << output << " (" << w << "x" << h << ") finished in " << elapsed(ctx.image_start)
+                << "ms";
+    } else {
+      LOG(ERROR) << "Image " << output << " save failed: " << err;
+    }
+
   }
 }
 
-void launch_pipeline(chan &in) {
+void launch_pipeline(chan &in, chan *out) {
   ichan load_import, import_inference, inference_export, export_save;
   std::array<std::thread, 5> threads{
       std::thread(image_load_worker, std::ref(in), std::ref(load_import)),
       std::thread(pixel_import_worker, std::ref(load_import), std::ref(import_inference)),
       std::thread(inference_worker, std::ref(import_inference), std::ref(inference_export)),
       std::thread(pixel_export_worker, std::ref(inference_export), std::ref(export_save)),
-      std::thread(image_save_worker, std::ref(export_save)),
+      std::thread(image_save_worker, std::ref(export_save), out),
   };
 
   for (auto &t: threads) {
