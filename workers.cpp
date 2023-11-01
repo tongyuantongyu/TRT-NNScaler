@@ -62,25 +62,27 @@ struct WorkContextInternal {
 
 typedef channel<WorkContextInternal> ichan;
 
-std::string input_repr(Work::input_t &input) {
+std::string input_repr(Work::input_t &input, bool incr=true) {
   static size_t counter = 0;
 
   if (input.index() == 0) {
     return u8s(std::get<0>(input));
   }
   else {
-    return "<input memory stream #" + std::to_string(counter++) + ">";;
+    auto idx = incr ? counter++ : counter;
+    return "<input memory stream #" + std::to_string(idx) + ">";;
   }
 }
 
-std::string output_repr(Work::output_t &output) {
+std::string output_repr(Work::output_t &output, bool incr=true) {
   static size_t counter = 0;
 
   if (output.index() == 0) {
     return u8s(std::get<0>(output));
   }
   else {
-    return "<output memory stream #" + std::to_string(counter++) + ">";;
+    auto idx = incr ? counter++ : counter;
+    return "<output memory stream #" + std::to_string(idx) + ">";;
   }
 }
 
@@ -152,7 +154,7 @@ static void image_load_worker(chan &in, ichan &out) {
     memset(out_ptr.get(), 0, in_view.size() * h_scale * w_scale);
 #endif
 
-    std::string output = output_repr(c.output);
+    std::string output = output_repr(c.output, false);
     out.put(WorkContextInternal{
         .output = std::move(c.output),
         .alpha_mode = c.alpha_mode,

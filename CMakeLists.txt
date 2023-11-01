@@ -228,7 +228,6 @@ set_target_properties(nn-scaler PROPERTIES
 # RPC Server
 
 if (WITH_RPC_SERVICE)
-
     add_library(scaler-proto OBJECT scaler_server.proto)
     target_link_libraries(scaler-proto PUBLIC protobuf::libprotobuf gRPC::grpc++)
 
@@ -266,6 +265,21 @@ if (WITH_RPC_SERVICE)
         target_link_libraries(nn-scaler-server PUBLIC _onnx_parser_shim)
     endif ()
 
+    add_executable(nn-scaler-client scaler_client.cpp)
+    target_link_libraries(nn-scaler-client PUBLIC
+            scaler-proto
+
+            absl::flags
+            absl::flags_parse
+            absl::flags_usage
+
+            absl::log
+            absl::log_flags
+            absl::log_initialize
+    )
+    set_target_properties(nn-scaler-client PROPERTIES
+            OUTPUT_NAME NNScalerClient
+    )
 endif ()
 
 # Model inspector

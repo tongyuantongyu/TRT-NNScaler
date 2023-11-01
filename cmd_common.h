@@ -13,7 +13,7 @@
 #include "infer_engine.h"
 #include "reformat/reformat.h"
 #include "image_io.h"
-#include "logging.h"
+#include "logging_trt.h"
 
 #ifdef _WIN32
 #define NOMINMAX

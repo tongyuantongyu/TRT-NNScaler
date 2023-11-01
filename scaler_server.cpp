@@ -76,8 +76,8 @@ int main(int argc, char** argv) {
   }
 #endif
 
-  if (exists(exe_path / "flags.txt")) {
-    absl::SetFlag(&FLAGS_flagfile, {u8s(exe_path / "flags.txt")});
+  if (exists(exe_path / "flags_server.txt")) {
+    absl::SetFlag(&FLAGS_flagfile, {u8s(exe_path / "flags_server.txt")});
   }
   absl::SetFlag(&FLAGS_model_path, u8s(exe_path / "models"));
   absl::SetFlag(&FLAGS_stderrthreshold, int(absl::LogSeverity::kInfo));
