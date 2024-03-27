@@ -76,8 +76,7 @@ InferenceSession::InferenceSession(InferenceContext &ctx)
       last_batch(-1), last_width(-1), last_height(-1), good_ {}, stream {},
       execution_memory {}, input {}, output{}, input_consumed {} {}
 
-
-std::string InferenceSession::allocation() {
+std::string InferenceSession::init() {
   auto &logger = ctx.logger;
   auto &config = ctx.config;
 
@@ -85,6 +84,17 @@ std::string InferenceSession::allocation() {
   CUDA_CHECK(cudaStreamCreate(&stream));
   CUDA_CHECK(cudaEventCreateWithFlags(&input_consumed, cudaEventBlockingSync | cudaEventDisableTiming));
 
+  COND_CHECK_EMPTY(context->setOptimizationProfileAsync(0, stream), "bad TensorRT call.");
+
+  COND_CHECK_EMPTY(context->setInputConsumedEvent(input_consumed), "bad TensorRT call.");
+  CUDA_CHECK(cudaStreamSynchronize(stream));
+
+  return "";
+}
+
+std::string InferenceSession::allocation() {
+  auto &logger = ctx.logger;
+  auto &config = ctx.config;
   const size_t eSize = config.use_fp16 ? 2 : 4;
 
   auto engine_alloc_size = ctx.engine->getDeviceMemorySize();
@@ -101,17 +111,31 @@ std::string InferenceSession::allocation() {
   CUDA_CHECK(cudaMallocAsync(&execution_memory, engine_alloc_size, stream));
   context->setDeviceMemory(execution_memory);
 
-  COND_CHECK_EMPTY(context->setOptimizationProfileAsync(0, stream), "bad TensorRT call.");
   CUDA_CHECK(cudaMallocAsync(&input, input_alloc_size, stream));
   CUDA_CHECK(cudaMallocAsync(&output, output_alloc_size, stream));
 
   COND_CHECK_EMPTY(context->setTensorAddress("input", input), "bad TensorRT call.");
   COND_CHECK_EMPTY(context->setTensorAddress("output", output), "bad TensorRT call.");
 
-  COND_CHECK_EMPTY(context->setInputConsumedEvent(input_consumed), "bad TensorRT call.");
   CUDA_CHECK(cudaStreamSynchronize(stream));
 
   good_ = true;
+  return "";
+}
+
+std::string InferenceSession::deallocation() {
+  good_ = false;
+
+  void* memories[] {execution_memory, input, output};
+
+  for (auto *p: memories) {
+    if (p != nullptr) {
+      CUDA_CHECK(cudaFreeAsync(p, stream));
+    }
+  }
+
+  CUDA_CHECK(cudaStreamSynchronize(stream));
+
   return "";
 }
 

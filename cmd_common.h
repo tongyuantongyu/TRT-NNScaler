@@ -168,9 +168,13 @@ void setup_session(bool handle_alpha) {
 
   session = new InferenceSession(ctx);
   session->config(1, absl::GetFlag(FLAGS_tile_height), absl::GetFlag(FLAGS_tile_width));
-  err = session->allocation();
+  err = session->init();
   if (!err.empty()) {
     LOG(QFATAL) << "Failed initialize context: " << err;
+  }
+  err = session->allocation();
+  if (!err.empty()) {
+    LOG(QFATAL) << "Failed allocate memory for context: " << err;
   }
   std::tie(h_scale, w_scale) = session->detect_scale();
   if (h_scale == -1 || w_scale == -1) {

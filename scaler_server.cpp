@@ -3,6 +3,7 @@
 //
 
 #include "cmd_common.h"
+#include <thread>
 
 #include "scaler_server.grpc.pb.h"
 
@@ -21,12 +22,42 @@ using grpc::Status;
 
 using namespace scaler_server;
 
+std::atomic<size_t> session_using;
+std::atomic<std::chrono::steady_clock::time_point> last_done;
+std::mutex idle_guard;
+
 class NNScalerImpl final : public NNScaler::Service {
   runner r;
 
  public:
   NNScalerImpl() : r{} {};
   Status Process(ServerContext*, const ScaleRequest* request, ScaleResponse* response) override {
+    struct guard {
+      guard() { session_using.fetch_add(1); }
+      ~guard() {
+        auto done = std::chrono::steady_clock::now();
+        auto last = last_done.load();
+        while (last < done) {
+          if (last_done.compare_exchange_strong(last, done)) {
+            break;
+          }
+        }
+        auto n = session_using.fetch_sub(1);
+      }
+    };
+
+    guard g;
+
+    if (!session->good()) {
+      std::lock_guard lock(idle_guard);
+      if (!session->good()) {
+        auto err = session->allocation();
+        if (!err.empty()) {
+          LOG(QFATAL) << "Failed reallocate workspace: " << err;
+        }
+      }
+    }
+
     auto input_ = request->data();
     auto data_ = reinterpret_cast<uint8_t*>(input_.data());
     std::vector<uint8_t> input(data_, data_ + input_.size());
@@ -61,6 +92,26 @@ class NNScalerImpl final : public NNScaler::Service {
 
 ABSL_FLAG(std::string, listen, "[::]:6000", "service listen address");
 
+[[noreturn]] void idle_cleanup() {
+  while (true) {
+    std::this_thread::sleep_for(std::chrono::seconds{10});
+
+    if (session_using == 0 && (std::chrono::steady_clock::now() - last_done.load()) > std::chrono::minutes{1}) {
+      std::unique_lock lock(idle_guard, std::try_to_lock);
+      if (lock.owns_lock()) {
+        if (session->good()) {
+          auto err = session->deallocation();
+          if (!err.empty()) {
+            LOG(QFATAL) << "Failed release workspace: " << err;
+          } else {
+            LOG(INFO) << "Workspace memory freed due to inactivity.";
+          }
+        }
+      }
+    }
+  }
+}
+
 int main(int argc, char** argv) {
   std::filesystem::path exe_path;
 #ifdef _WIN32
@@ -91,7 +142,10 @@ int main(int argc, char** argv) {
   absl::InitializeLog();
   setup_session(true);
 
+  session_using = 0;
+  last_done = std::chrono::steady_clock::now();
   LOG(INFO) << "Initialized.";
+  std::thread(idle_cleanup).detach();
 
   NNScalerImpl service;
 
@@ -101,6 +155,7 @@ int main(int argc, char** argv) {
   builder.RegisterService(&service);
   builder.SetMaxReceiveMessageSize(128 * 1024 * 1024);
   builder.SetDefaultCompressionAlgorithm(GRPC_COMPRESS_NONE);
+  builder.SetResourceQuota(grpc::ResourceQuota().SetMaxThreads(4));
   std::unique_ptr<Server> server(builder.BuildAndStart());
   LOG(INFO) << "Server listening on " << server_address;
   server->Wait();

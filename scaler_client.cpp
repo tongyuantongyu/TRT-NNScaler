@@ -149,7 +149,7 @@ class ScalerClient {
 
   std::unique_ptr<NNScaler::Stub> stub_;
   CompletionQueue cq_;
-  cyan::counting_semaphore<4> sema;
+  cyan::counting_semaphore<3> sema;
 };
 
 static std::string handle_image(const std::filesystem::path &input,

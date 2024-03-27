@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <sstream>
+#include <atomic>
 
 #include "NvInfer.h"
 
@@ -96,7 +97,7 @@ class InferenceSession {
   nvinfer1::IExecutionContext *context;
   void *execution_memory;
   int32_t last_batch, last_height, last_width;
-  bool good_;
+  std::atomic<bool> good_;
 
  public:
   cudaStream_t stream;
@@ -108,7 +109,9 @@ class InferenceSession {
 
   [[nodiscard]] bool good() const { return good_; }
 
+  std::string init();
   std::string allocation();
+  std::string deallocation();
   void config(int32_t batch, int32_t height, int32_t width);
   std::pair<int32_t, int32_t> detect_scale();
 
