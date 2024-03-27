@@ -24,6 +24,7 @@ struct ScalerConfig {
 
   int32_t aux_stream;
   bool use_fp16;
+  bool use_int8;
   bool external;
   bool low_mem;
 
@@ -32,6 +33,9 @@ struct ScalerConfig {
     ss << "_w" << input_width << "_h" << input_height << "_b" << batch << "_a" << aux_stream;
     if (use_fp16) {
       ss << "_fp16";
+    }
+    if (use_int8) {
+      ss << "_int8";
     }
     if (external) {
       ss << "_ext";

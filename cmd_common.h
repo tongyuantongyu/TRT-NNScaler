@@ -55,7 +55,8 @@ extern "C" int32_t getInferLibVersion_UseHeader() noexcept {
 
 static Logger gLogger;
 
-ABSL_FLAG(bool, fp16, false, "use FP16 processing");
+ABSL_FLAG(bool, fp16, false, "use FP16 processing, allow FP16 in engine");
+ABSL_FLAG(bool, int8, false, "allow INT8 in engine");
 ABSL_FLAG(bool, external, false, "use external algorithms from cuDNN and cuBLAS");
 ABSL_FLAG(bool, low_mem, false, "tweak configs to reduce memory consumption");
 ABSL_FLAG(int32_t, aux_stream, -1, "Auxiliary streams to use");
@@ -143,6 +144,7 @@ void setup_session(bool handle_alpha) {
           1,
           absl::GetFlag(FLAGS_aux_stream),
           absl::GetFlag(FLAGS_fp16),
+          absl::GetFlag(FLAGS_int8),
           absl::GetFlag(FLAGS_external),
           absl::GetFlag(FLAGS_low_mem),
       },

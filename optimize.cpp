@@ -26,6 +26,9 @@ nvinfer1::IBuilderConfig *OptimizationContext::prepareConfig() const {
   if (config.use_fp16) {
     conf->setFlag(nvinfer1::BuilderFlag::kFP16);
   }
+  if (config.use_int8) {
+    conf->setFlag(nvinfer1::BuilderFlag::kINT8);
+  }
   conf->setFlag(nvinfer1::BuilderFlag::kTF32);
   conf->setFlag(nvinfer1::BuilderFlag::kSPARSE_WEIGHTS);
   conf->setFlag(nvinfer1::BuilderFlag::kOBEY_PRECISION_CONSTRAINTS);
