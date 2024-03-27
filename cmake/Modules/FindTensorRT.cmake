@@ -21,8 +21,8 @@ function(_tensorrt_get_version)
     file(STRINGS "${_hdr_file}" VERSION_STRINGS REGEX "#define NV_TENSORRT_.*")
 
     foreach(TYPE MAJOR MINOR PATCH BUILD)
-        string(REGEX MATCH "NV_TENSORRT_${TYPE} [0-9]" TRT_TYPE_STRING ${VERSION_STRINGS})
-        string(REGEX MATCH "[0-9]" TensorRT_VERSION_${TYPE} ${TRT_TYPE_STRING})
+        string(REGEX MATCH "NV_TENSORRT_${TYPE} [0-9]+" TRT_TYPE_STRING ${VERSION_STRINGS})
+        string(REGEX MATCH "[0-9]+" TensorRT_VERSION_${TYPE} ${TRT_TYPE_STRING})
     endforeach(TYPE)
 
     set(TensorRT_VERSION_MAJOR ${TensorRT_VERSION_MAJOR} PARENT_SCOPE)

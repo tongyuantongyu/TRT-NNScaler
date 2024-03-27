@@ -30,6 +30,9 @@ nvinfer1::IBuilderConfig *OptimizationContext::prepareConfig() const {
   conf->setFlag(nvinfer1::BuilderFlag::kSPARSE_WEIGHTS);
   conf->setFlag(nvinfer1::BuilderFlag::kOBEY_PRECISION_CONSTRAINTS);
   conf->setProfilingVerbosity(nvinfer1::ProfilingVerbosity::kDETAILED);
+#if NV_TENSORRT_MAJOR == 8
+  conf->setPreviewFeature(nvinfer1::PreviewFeature::kPROFILE_SHARING_0806, true);
+#endif
   if (config.aux_stream != -1) {
     conf->setMaxAuxStreams(config.aux_stream);
   }
@@ -38,7 +41,9 @@ nvinfer1::IBuilderConfig *OptimizationContext::prepareConfig() const {
         (1u << int32_t(nvinfer1::TacticSource::kCUDNN)) |
             (1u << int32_t(nvinfer1::TacticSource::kCUBLAS)) |
             (1u << int32_t(nvinfer1::TacticSource::kCUBLAS_LT))));
+#if NV_TENSORRT_MAJOR == 8
     conf->setPreviewFeature(nvinfer1::PreviewFeature::kDISABLE_EXTERNAL_TACTIC_SOURCES_FOR_CORE_0805, false);
+#endif
   }
   if (config.low_mem) {
     conf->setTacticSources(conf->getTacticSources() & ~nvinfer1::TacticSources(

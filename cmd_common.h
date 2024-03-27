@@ -43,11 +43,11 @@ int32_t h_scale, w_scale;
 
 #if defined(__GNUC__)
 extern "C" __attribute__((weak)) int32_t getInferLibVersion() noexcept {
-  return nvinfer1::kNV_TENSORRT_VERSION_IMPL;
+  return NV_TENSORRT_VERSION;
 }
 #elif defined(_MSC_VER)
 extern "C" int32_t getInferLibVersion_UseHeader() noexcept {
-  return nvinfer1::kNV_TENSORRT_VERSION_IMPL;
+  return NV_TENSORRT_VERSION;
 }
 #pragma comment(linker, "/alternatename:getInferLibVersion=getInferLibVersion_UseHeader")
 #endif
