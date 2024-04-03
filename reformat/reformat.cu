@@ -7,7 +7,7 @@ static half __device__ round(half f) {
 }
 
 template<class F, class U>
-static void __global__ import_opaque_kernel(md_view<F, 3> dst, md_view<const U, 3> src, F a, F b) {
+static void __global__ import_opaque_kernel(md_view<F, int32_t, 3> dst, md_view<const U, int32_t, 3> src, F a, F b) {
   uint32_t dst_x = threadIdx.x + blockDim.x * blockIdx.x;
   uint32_t dst_y = threadIdx.y + blockDim.y * blockIdx.y;
 
@@ -26,9 +26,9 @@ static void __global__ import_opaque_kernel(md_view<F, 3> dst, md_view<const U, 
 }
 
 template<class F, class U>
-static void __global__ import_alpha_kernel(md_view<F, 3> dst,
-                                           md_view<F, 2> dst_alpha,
-                                           md_view<const U, 3> src,
+static void __global__ import_alpha_kernel(md_view<F, int32_t, 3> dst,
+                                           md_view<F, int32_t, 2> dst_alpha,
+                                           md_view<const U, int32_t, 3> src,
                                            F a,
                                            F b) {
   uint32_t dst_x = threadIdx.x + blockDim.x * blockIdx.x;
@@ -67,7 +67,7 @@ static U __device__ cast(F v) {
 }
 
 template<class F, class U>
-static void __global__ export_opaque_kernel(md_view<U, 3> dst, md_uview<const F, 3> src, F a, F b) {
+static void __global__ export_opaque_kernel(md_view<U, int32_t, 3> dst, md_uview<const F, int32_t, 3> src, F a, F b) {
   uint32_t dst_x = threadIdx.x + blockDim.x * blockIdx.x;
   uint32_t dst_y = threadIdx.y + blockDim.y * blockIdx.y;
 
@@ -82,9 +82,9 @@ static void __global__ export_opaque_kernel(md_view<U, 3> dst, md_uview<const F,
 }
 
 template<class F, class U>
-static void __global__ export_alpha_kernel(md_view<U, 3> dst,
-                                           md_uview<const F, 3> src,
-                                           md_uview<const F, 2> src_alpha,
+static void __global__ export_alpha_kernel(md_view<U, int32_t, 3> dst,
+                                           md_uview<const F, int32_t, 3> src,
+                                           md_uview<const F, int32_t, 2> src_alpha,
                                            F a,
                                            F b) {
   uint32_t dst_x = threadIdx.x + blockDim.x * blockIdx.x;
@@ -111,9 +111,9 @@ static void __global__ export_alpha_kernel(md_view<U, 3> dst,
 }
 
 template<class F, class U>
-void import_pixel_cuda(md_view<F, 3> dst,
-                       md_view<F, 2> dst_alpha,
-                       md_view<const U, 3> src,
+void import_pixel_cuda(md_view<F, int32_t, 3> dst,
+                       md_view<F, int32_t, 2> dst_alpha,
+                       md_view<const U, int32_t, 3> src,
                        float a,
                        float b,
                        cudaStream_t stream) {
@@ -133,9 +133,9 @@ void import_pixel_cuda(md_view<F, 3> dst,
 }
 
 template<class F, class U>
-void export_pixel_cuda(md_view<U, 3> dst,
-                       md_uview<const F, 3> src,
-                       md_uview<const F, 2> src_alpha,
+void export_pixel_cuda(md_view<U, int32_t, 3> dst,
+                       md_uview<const F, int32_t, 3> src,
+                       md_uview<const F, int32_t, 2> src_alpha,
                        float a,
                        float b,
                        cudaStream_t stream) {
@@ -154,27 +154,27 @@ void export_pixel_cuda(md_view<U, 3> dst,
   }
 }
 
-template void import_pixel_cuda<float, uint8_t>(md_view<float, 3> dst,
-                                                md_view<float, 2> dst_alpha,
-                                                md_view<const uint8_t, 3> src,
+template void import_pixel_cuda<float, uint8_t>(md_view<float, int32_t, 3> dst,
+                                                md_view<float, int32_t, 2> dst_alpha,
+                                                md_view<const uint8_t, int32_t, 3> src,
                                                 float a,
                                                 float b,
                                                 cudaStream_t stream);
-template void import_pixel_cuda<half, uint8_t>(md_view<half, 3> dst,
-                                               md_view<half, 2> dst_alpha,
-                                               md_view<const uint8_t, 3> src,
+template void import_pixel_cuda<half, uint8_t>(md_view<half, int32_t, 3> dst,
+                                               md_view<half, int32_t, 2> dst_alpha,
+                                               md_view<const uint8_t, int32_t, 3> src,
                                                float a,
                                                float b,
                                                cudaStream_t stream);
-template void export_pixel_cuda<float, uint8_t>(md_view<uint8_t, 3> dst,
-                                                md_uview<const float, 3> src,
-                                                md_uview<const float, 2> src_alpha,
+template void export_pixel_cuda<float, uint8_t>(md_view<uint8_t, int32_t, 3> dst,
+                                                md_uview<const float, int32_t, 3> src,
+                                                md_uview<const float, int32_t, 2> src_alpha,
                                                 float a,
                                                 float b,
                                                 cudaStream_t stream);
-template void export_pixel_cuda<half, uint8_t>(md_view<uint8_t, 3> dst,
-                                               md_uview<const half, 3> src,
-                                               md_uview<const half, 2> src_alpha,
+template void export_pixel_cuda<half, uint8_t>(md_view<uint8_t, int32_t, 3> dst,
+                                               md_uview<const half, int32_t, 3> src,
+                                               md_uview<const half, int32_t, 2> src_alpha,
                                                float a,
                                                float b,
                                                cudaStream_t stream);

@@ -19,7 +19,7 @@ class pixel_importer_cpu {
   size_t max_size;
 
   template<typename U>
-  std::string import_pixel(shape_t<2> dst_shape, md_uview<const U, 3> src, cudaStream_t stream, float quant = 0.0);
+  std::string import_pixel(shape_t<int32_t, 2> dst_shape, md_uview<const U, int32_t, 3> src, cudaStream_t stream, float quant = 0.0);
 
  public:
   explicit pixel_importer_cpu(size_t max_size, bool handle_alpha = true)
@@ -30,14 +30,14 @@ class pixel_importer_cpu {
   }
 
   template<typename U>
-  std::string import_color(md_view<float, 3> dst, md_uview<const U, 3> src, cudaStream_t stream, float quant = 0.0);
+  std::string import_color(md_view<float, int32_t, 3> dst, md_uview<const U, int32_t, 3> src, cudaStream_t stream, float quant = 0.0);
 
   template<typename U>
-  std::string import_alpha(md_view<float, 3> dst, md_uview<const U, 3> src, cudaStream_t stream, float quant = 0.0);
+  std::string import_alpha(md_view<float, int32_t, 3> dst, md_uview<const U, int32_t, 3> src, cudaStream_t stream, float quant = 0.0);
 };
 
 struct pad_descriptor {
-  offset_t pad;
+  int32_t pad;
   bool top, bottom, left, right;
 };
 
@@ -45,7 +45,7 @@ class pixel_exporter_cpu {
   std::unique_ptr<float[]> buffer{};
   std::unique_ptr<float[]> buffer_alpha{};
   bool alpha_filled{};
-  shape_t<3> current_buffer_shape;
+  shape_t<int32_t, 3> current_buffer_shape;
   size_t max_size;
 
  public:
@@ -57,22 +57,22 @@ class pixel_exporter_cpu {
   }
 
   template<typename U>
-  std::string fetch_color(md_view<const float, 3> src,
-                          md_uview<U, 3> dst,
+  std::string fetch_color(md_view<const float, int32_t, 3> src,
+                          md_uview<U, int32_t, 3> dst,
                           pad_descriptor pad,
                           cudaStream_t stream,
                           float quant = 0.0);
 
   template<typename T = void>
-  std::string fetch_alpha(md_view<const float, 3> src, cudaStream_t stream);
+  std::string fetch_alpha(md_view<const float, int32_t, 3> src, cudaStream_t stream);
 };
 
 // ----------
 // Implementation
 
 template<typename U>
-std::string pixel_importer_cpu::import_pixel(shape_t<2> dst_shape,
-                                             md_uview<const U, 3> src,
+std::string pixel_importer_cpu::import_pixel(shape_t<int32_t, 2> dst_shape,
+                                             md_uview<const U, int32_t, 3> src,
                                              cudaStream_t stream,
                                              float quant) {
   auto [h, w, c] = src.shape;
@@ -90,8 +90,8 @@ std::string pixel_importer_cpu::import_pixel(shape_t<2> dst_shape,
     quant = 1.0 / float(std::numeric_limits<U>::max());
   }
 
-  md_view<float, 3> tmp{buffer.get(), {3, dh, dw}};
-  md_view<float, 2> tmp_alpha{buffer_alpha.get(), {h, w}};
+  md_view<float, int32_t, 3> tmp{buffer.get(), {3, dh, dw}};
+  md_view<float, int32_t, 2> tmp_alpha{buffer_alpha.get(), {h, w}};
 
   if (c == 3) {
     for (size_t y = 0; y < h; ++y) {
@@ -165,8 +165,8 @@ std::string pixel_importer_cpu::import_pixel(shape_t<2> dst_shape,
 }
 
 template<typename U>
-std::string pixel_importer_cpu::import_color(md_view<float, 3> dst,
-                                             md_uview<const U, 3> src,
+std::string pixel_importer_cpu::import_color(md_view<float, int32_t, 3> dst,
+                                             md_uview<const U, int32_t, 3> src,
                                              cudaStream_t stream,
                                              float quant) {
   if (!buffer_filled) {
@@ -178,7 +178,7 @@ std::string pixel_importer_cpu::import_color(md_view<float, 3> dst,
 
   auto [dc, dh, dw] = dst.shape;
 
-  md_view<float, 3> tmp{buffer.get(), {3, dh, dw}};
+  md_view<float, int32_t, 3> tmp{buffer.get(), {3, dh, dw}};
 
   auto err = cudaMemcpyAsync(dst.data, tmp.data, dst.size() * 4, cudaMemcpyHostToDevice, stream);
   if (err != cudaSuccess) {
@@ -191,8 +191,8 @@ std::string pixel_importer_cpu::import_color(md_view<float, 3> dst,
 }
 
 template<typename U>
-std::string pixel_importer_cpu::import_alpha(md_view<float, 3> dst,
-                                             md_uview<const U, 3> src,
+std::string pixel_importer_cpu::import_alpha(md_view<float, int32_t, 3> dst,
+                                             md_uview<const U, int32_t, 3> src,
                                              cudaStream_t stream,
                                              float quant) {
   if (!buffer_filled) {
@@ -220,7 +220,7 @@ std::string pixel_importer_cpu::import_alpha(md_view<float, 3> dst,
 
 
 template<typename T>
-std::string pixel_exporter_cpu::fetch_alpha(md_view<const float, 3> src, cudaStream_t stream) {
+std::string pixel_exporter_cpu::fetch_alpha(md_view<const float, int32_t, 3> src, cudaStream_t stream) {
   auto [c, h, w] = src.shape;
 
   if (h * w > max_size) {
@@ -243,8 +243,8 @@ std::string pixel_exporter_cpu::fetch_alpha(md_view<const float, 3> src, cudaStr
 }
 
 template<typename U>
-std::string pixel_exporter_cpu::fetch_color(md_view<const float, 3> src,
-                                            md_uview<U, 3> dst,
+std::string pixel_exporter_cpu::fetch_color(md_view<const float, int32_t, 3> src,
+                                            md_uview<U, int32_t, 3> dst,
                                             pad_descriptor pad,
                                             cudaStream_t stream,
                                             float quant) {
@@ -278,12 +278,12 @@ std::string pixel_exporter_cpu::fetch_color(md_view<const float, 3> src,
     return "incompatible dimension";
   }
 
-  md_uview<float, 3> tmp = md_view<float, 3>{buffer.get(), src.shape};
-  md_uview<float, 2> tmp_alpha = md_view<float, 2>{buffer_alpha.get(), src.shape.slice<1, 2>()};
+  md_uview<float, int32_t, 3> tmp = md_view<float, int32_t, 3>{buffer.get(), src.shape};
+  md_uview<float, int32_t, 2> tmp_alpha = md_view<float, int32_t, 2>{buffer_alpha.get(), src.shape.slice<1, 2>()};
 
-  offset_t shrink = pad.pad / 2;
-  offset_t hb = pad.top ? 0 : shrink;
-  offset_t wb = pad.left ? 0 : shrink;
+  int32_t shrink = pad.pad / 2;
+  int32_t hb = pad.top ? 0 : shrink;
+  int32_t wb = pad.left ? 0 : shrink;
   he -= pad.bottom ? 0 : shrink;
   we -= pad.right ? 0 : shrink;
 
@@ -356,9 +356,9 @@ class pixel_importer_gpu {
   size_t max_size;
 
   template<typename U, std::enable_if_t<sizeof(U) <= eSize, bool> = true>
-  std::string import_pixel(md_view<F, 3> dst,
-                           md_view<F, 2> dst_alpha,
-                           md_uview<const U, 3> src,
+  std::string import_pixel(md_view<F, int32_t, 3> dst,
+                           md_view<F, int32_t, 2> dst_alpha,
+                           md_uview<const U, int32_t, 3> src,
                            cudaStream_t stream,
                            float quant);
 
@@ -389,10 +389,10 @@ class pixel_importer_gpu {
   }
 
   template<typename U>
-  std::string import_color(md_view<F, 3> dst, md_uview<const U, 3> src, cudaStream_t stream, float quant = 0.0);
+  std::string import_color(md_view<F, int32_t, 3> dst, md_uview<const U, int32_t, 3> src, cudaStream_t stream, float quant = 0.0);
 
   template<typename U>
-  std::string import_alpha(md_view<F, 3> dst, md_uview<const U, 3> src, cudaStream_t stream, float quant = 0.0);
+  std::string import_alpha(md_view<F, int32_t, 3> dst, md_uview<const U, int32_t, 3> src, cudaStream_t stream, float quant = 0.0);
 };
 
 template<typename F, size_t eSize = 1>
@@ -401,7 +401,7 @@ class pixel_exporter_gpu {
   void *gpu_buffer;
   void *gpu_buffer_alpha;
   bool alpha_filled{};
-  shape_t<3> current_buffer_shape;
+  shape_t<int32_t, 3> current_buffer_shape;
   size_t max_size;
 
  public:
@@ -420,12 +420,12 @@ class pixel_exporter_gpu {
   }
 
   template<typename U, std::enable_if_t<sizeof(U) <= eSize, bool> = true>
-  std::string fetch_color(md_view<const F, 3> src,
-                          md_uview<U, 3> dst,
+  std::string fetch_color(md_view<const F, int32_t, 3> src,
+                          md_uview<U, int32_t, 3> dst,
                           pad_descriptor pad,
                           cudaStream_t stream,
                           float quant = 0.0);
-  std::string fetch_alpha(md_view<const F, 3> src, cudaStream_t stream);
+  std::string fetch_alpha(md_view<const F, int32_t, 3> src, cudaStream_t stream);
 };
 
 // ----------
@@ -433,9 +433,9 @@ class pixel_exporter_gpu {
 
 template<typename F, size_t eSize>
 template<typename U, std::enable_if_t<sizeof(U) <= eSize, bool>>
-std::string pixel_importer_gpu<F, eSize>::import_pixel(md_view<F, 3> dst,
-                                                       md_view<F, 2> dst_alpha,
-                                                       md_uview<const U, 3> src,
+std::string pixel_importer_gpu<F, eSize>::import_pixel(md_view<F, int32_t, 3> dst,
+                                                       md_view<F, int32_t, 2> dst_alpha,
+                                                       md_uview<const U, int32_t, 3> src,
                                                        cudaStream_t stream,
                                                        float quant) {
   auto [h, w, c] = src.shape;
@@ -453,16 +453,16 @@ std::string pixel_importer_gpu<F, eSize>::import_pixel(md_view<F, 3> dst,
     quant = 1.0 / float(std::numeric_limits<U>::max());
   }
 
-  md_view<U, 3> tmp{reinterpret_cast<U *>(buffer.get()), src.shape};
+  md_view<U, int32_t, 3> tmp{reinterpret_cast<U *>(buffer.get()), src.shape};
   copy(to_uview(tmp), src);
 
-  md_view<U, 3> gpu_tmp{reinterpret_cast<U *>(gpu_buffer), src.shape};
+  md_view<U, int32_t, 3> gpu_tmp{reinterpret_cast<U *>(gpu_buffer), src.shape};
   auto err = cudaMemcpyAsync(gpu_tmp.data, tmp.data, tmp.size() * sizeof(U), cudaMemcpyHostToDevice, stream);
   if (err != cudaSuccess) {
     return std::string("CUDA error: ") + cudaGetErrorName(err);
   }
 
-  import_pixel_cuda(dst, dst_alpha, md_view<const U, 3>(gpu_tmp), quant, 0.0, stream);
+  import_pixel_cuda(dst, dst_alpha, md_view<const U, int32_t, 3>(gpu_tmp), quant, 0.0, stream);
   err = cudaGetLastError();
   if (err != cudaSuccess) {
     return std::string("CUDA error: ") + cudaGetErrorName(err);
@@ -474,11 +474,11 @@ std::string pixel_importer_gpu<F, eSize>::import_pixel(md_view<F, 3> dst,
 
 template<typename F, size_t eSize>
 template<typename U>
-std::string pixel_importer_gpu<F, eSize>::import_alpha(md_view<F, 3> dst,
-                                                       md_uview<const U, 3> src,
+std::string pixel_importer_gpu<F, eSize>::import_alpha(md_view<F, int32_t, 3> dst,
+                                                       md_uview<const U, int32_t, 3> src,
                                                        cudaStream_t stream,
                                                        float quant) {
-  md_view<F, 3> dst_color{reinterpret_cast<F *>(gpu_buffer_color), dst.shape};
+  md_view<F, int32_t, 3> dst_color{reinterpret_cast<F *>(gpu_buffer_color), dst.shape};
   auto err = import_pixel(dst_color, dst.at(0), src, stream, quant);
   if (!err.empty()) {
     return err;
@@ -496,8 +496,8 @@ std::string pixel_importer_gpu<F, eSize>::import_alpha(md_view<F, 3> dst,
 
 template<typename F, size_t eSize>
 template<typename U>
-std::string pixel_importer_gpu<F, eSize>::import_color(md_view<F, 3> dst,
-                                                       md_uview<const U, 3> src,
+std::string pixel_importer_gpu<F, eSize>::import_color(md_view<F, int32_t, 3> dst,
+                                                       md_uview<const U, int32_t, 3> src,
                                                        cudaStream_t stream,
                                                        float quant) {
   if (buffer_filled) {
@@ -517,7 +517,7 @@ std::string pixel_importer_gpu<F, eSize>::import_color(md_view<F, 3> dst,
 }
 
 template<typename F, size_t eSize>
-std::string pixel_exporter_gpu<F, eSize>::fetch_alpha(md_view<const F, 3> src, cudaStream_t stream) {
+std::string pixel_exporter_gpu<F, eSize>::fetch_alpha(md_view<const F, int32_t, 3> src, cudaStream_t stream) {
   auto [c, h, w] = src.shape;
 
   if (h * w > max_size) {
@@ -536,8 +536,8 @@ std::string pixel_exporter_gpu<F, eSize>::fetch_alpha(md_view<const F, 3> src, c
 
 template<typename F, size_t eSize>
 template<typename U, std::enable_if_t<sizeof(U) <= eSize, bool>>
-std::string pixel_exporter_gpu<F, eSize>::fetch_color(md_view<const F, 3> src,
-                                                      md_uview<U, 3> dst,
+std::string pixel_exporter_gpu<F, eSize>::fetch_color(md_view<const F, int32_t, 3> src,
+                                                      md_uview<U, int32_t, 3> dst,
                                                       pad_descriptor pad,
                                                       cudaStream_t stream,
                                                       float quant) {
@@ -560,15 +560,15 @@ std::string pixel_exporter_gpu<F, eSize>::fetch_color(md_view<const F, 3> src,
     return "incompatible dimension";
   }
 
-  md_uview<const F, 3> usrc = src;
-  md_uview<const F, 2> src_alpha = md_view<const F, 2>{
+  md_uview<const F, int32_t, 3> usrc = src;
+  md_uview<const F, int32_t, 2> src_alpha = md_view<const F, int32_t, 2>{
       static_cast<const F *>(gpu_buffer_alpha),
       src.shape.template slice<1, 2>()
   };
 
-  offset_t shrink = pad.pad / 2;
-  offset_t hb = pad.top ? 0 : shrink;
-  offset_t wb = pad.left ? 0 : shrink;
+  int32_t shrink = pad.pad / 2;
+  int32_t hb = pad.top ? 0 : shrink;
+  int32_t wb = pad.left ? 0 : shrink;
   he -= pad.bottom ? 0 : shrink;
   we -= pad.right ? 0 : shrink;
 
@@ -584,8 +584,8 @@ std::string pixel_exporter_gpu<F, eSize>::fetch_color(md_view<const F, 3> src,
   }
   alpha_filled = false;
 
-  md_view<U, 3> gpu_tmp{static_cast<U *>(gpu_buffer), dst.shape};
-  md_view<U, 3> tmp{reinterpret_cast<U *>(buffer.get()), dst.shape};
+  md_view<U, int32_t, 3> gpu_tmp{static_cast<U *>(gpu_buffer), dst.shape};
+  md_view<U, int32_t, 3> tmp{reinterpret_cast<U *>(buffer.get()), dst.shape};
 
   export_pixel_cuda(gpu_tmp, usrc, src_alpha, quant, 0, stream);
 

@@ -4,7 +4,8 @@
 
 #include <fstream>
 #include <thread>
-#include "semaphore.h"
+#include <future>
+#include "my_semaphore.h"
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
@@ -17,12 +18,11 @@
 
 #include <grpcpp/grpcpp.h>
 
-#include "nn-scaler.h"
+#include "timing.h"
 #include "logging.h"
 
 ABSL_DECLARE_FLAG(int, stderrthreshold);
 ABSL_DECLARE_FLAG(bool, log_prefix);
-ABSL_FLAG(uint32_t, v, 0, "verbosity log level");
 
 using grpc::Channel;
 using grpc::ChannelArguments;

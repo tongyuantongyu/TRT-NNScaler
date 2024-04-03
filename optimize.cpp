@@ -31,7 +31,13 @@ nvinfer1::IBuilderConfig *OptimizationContext::prepareConfig() const {
   }
   conf->setFlag(nvinfer1::BuilderFlag::kTF32);
   conf->setFlag(nvinfer1::BuilderFlag::kSPARSE_WEIGHTS);
-  conf->setFlag(nvinfer1::BuilderFlag::kOBEY_PRECISION_CONSTRAINTS);
+  if (config.force_precision) {
+    conf->setFlag(nvinfer1::BuilderFlag::kOBEY_PRECISION_CONSTRAINTS);
+  } else {
+#if NV_TENSORRT_MAJOR == 8
+    conf->setFlag(nvinfer1::BuilderFlag::kPREFER_PRECISION_CONSTRAINTS);
+#endif
+  }
   conf->setProfilingVerbosity(nvinfer1::ProfilingVerbosity::kDETAILED);
 #if NV_TENSORRT_MAJOR == 8
   conf->setPreviewFeature(nvinfer1::PreviewFeature::kPROFILE_SHARING_0806, true);
@@ -39,15 +45,21 @@ nvinfer1::IBuilderConfig *OptimizationContext::prepareConfig() const {
   if (config.aux_stream != -1) {
     conf->setMaxAuxStreams(config.aux_stream);
   }
+#if NV_TENSORRT_MAJOR == 8
   if (config.external) {
     conf->setTacticSources(conf->getTacticSources() | nvinfer1::TacticSources(
         (1u << int32_t(nvinfer1::TacticSource::kCUDNN)) |
             (1u << int32_t(nvinfer1::TacticSource::kCUBLAS)) |
             (1u << int32_t(nvinfer1::TacticSource::kCUBLAS_LT))));
-#if NV_TENSORRT_MAJOR == 8
     conf->setPreviewFeature(nvinfer1::PreviewFeature::kDISABLE_EXTERNAL_TACTIC_SOURCES_FOR_CORE_0805, false);
-#endif
+  } else {
+    conf->setTacticSources(conf->getTacticSources() & ~nvinfer1::TacticSources(
+        (1u << int32_t(nvinfer1::TacticSource::kCUDNN)) |
+            (1u << int32_t(nvinfer1::TacticSource::kCUBLAS)) |
+            (1u << int32_t(nvinfer1::TacticSource::kCUBLAS_LT))));
+    conf->setPreviewFeature(nvinfer1::PreviewFeature::kDISABLE_EXTERNAL_TACTIC_SOURCES_FOR_CORE_0805, true);
   }
+#endif
   if (config.low_mem) {
     conf->setTacticSources(conf->getTacticSources() & ~nvinfer1::TacticSources(
         (1u << int32_t(nvinfer1::TacticSource::kEDGE_MASK_CONVOLUTIONS))));
@@ -96,7 +108,11 @@ OptimizationContext::OptimizationContext(ScalerConfig config, nvinfer1::ILogger 
 }
 
 nvinfer1::INetworkDefinition *OptimizationContext::createNetwork() const {
+#if NV_TENSORRT_MAJOR >= 10
+  return builder->createNetworkV2(0u);
+#else
   return builder->createNetworkV2(1u << uint32_t(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH));
+#endif
 }
 
 OptimizationContext::~OptimizationContext() {
@@ -163,6 +179,36 @@ std::string OptimizationContext::optimize() {
   p.write(static_cast<const char *>(modelStream->data()), modelStream->size());
   p.close();
   VLOG(1) << "Done save engine.";
+
+  auto runtime = nvinfer1::createInferRuntime(logger);
+  auto engine = runtime->deserializeCudaEngine(modelStream->data(), modelStream->size());
+  auto inspector = engine->createEngineInspector();
+
+  #if NV_TENSORRT_MAJOR >= 10
+  auto context = engine->createExecutionContext(nvinfer1::ExecutionContextAllocationStrategy::kUSER_MANAGED);
+  #else
+  auto context = engine->createExecutionContextWithoutDeviceMemory();
+  #endif
+
+  context->setOptimizationProfileAsync(0, nullptr);
+  cudaStreamSynchronize(nullptr);
+
+  context->setInputShape("input", nvinfer1::Dims4{batch.opt, 3, height.opt, width.opt});
+  context->inferShapes(0, nullptr);
+
+  inspector->setExecutionContext(context);
+
+  auto path_layers = target;
+
+  path_layers.replace_extension(".layers.json");
+  std::ofstream info(path_layers, std::ios::binary);
+  info << inspector->getEngineInformation(nvinfer1::LayerInformationFormat::kJSON);
+  info.close();
+
+  delete inspector;
+  delete context;
+  delete engine;
+  delete runtime;
 
   return "";
 }

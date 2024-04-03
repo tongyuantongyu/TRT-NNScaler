@@ -42,11 +42,11 @@ struct WorkContextInternal {
 
   // filled by image_load
   hr_clock::time_point image_start, tile_start;
-  md_uview<const uint8_t, 3> in_image;
+  md_uview<const uint8_t, int32_t, 3> in_image;
   mem_owner in_memory;  // hold by pixel_import
 
   // filled by pixel_import
-  offset_t y, x, th, tw;
+  int32_t y, x, th, tw;
   bool h_beg, h_end, w_beg, w_end;
   bool has_alpha, is_alpha, is_begin, is_end;
   std::promise<void> input_consumed;  // hold by inference
@@ -55,7 +55,7 @@ struct WorkContextInternal {
   std::promise<void> output_consumed;  // hold by pixel_export
 
   // alloc by image_load, filled by pixel_export
-  md_uview<uint8_t, 3> out_image;
+  md_uview<uint8_t, int32_t, 3> out_image;
   mem_owner out_memory;  // hold by image_save
   std::future<void> alpha_filtered;  // TODO filter scale alpha
 };
@@ -106,11 +106,11 @@ static void image_load_worker(chan &in, ichan &out) {
     }
 
     auto [in_shape, in_ptr] = std::move(std::get<0>(img_ret));
-    md_view<uint8_t, 3> in_view{reinterpret_cast<uint8_t *>(in_ptr.get()), in_shape};
+    md_view<uint8_t, int32_t, 3> in_view{reinterpret_cast<uint8_t *>(in_ptr.get()), in_shape};
     if (c.pre_scale != 1.0) {
       auto [ho, wo, co] = in_view.shape;
-      offset_t hs = round(c.pre_scale * ho);
-      offset_t ws = round(c.pre_scale * wo);
+      int32_t hs = round(c.pre_scale * ho);
+      int32_t ws = round(c.pre_scale * wo);
       auto [scaled_view, scaled_ptr] = alloc_buffer<uint8_t>(hs, ws, co);
       if (co == 3) {
         libyuv::RGBScale(in_view.data,
@@ -208,7 +208,7 @@ ABSL_DECLARE_FLAG(uint32_t, tile_pad);
 ABSL_DECLARE_FLAG(uint32_t, extend_grace);
 ABSL_DECLARE_FLAG(uint32_t, alignment);
 
-static offset_t align(offset_t n, size_t alignment) {
+static int32_t align(int32_t n, size_t alignment) {
   n += alignment - 1;
   return n - (n % alignment);
 }
@@ -224,19 +224,19 @@ static void pixel_import_worker(ichan &in, ichan &out) {
 
     auto [h, w, c] = ctx.in_image.shape;
     auto process_alpha = ctx.alpha_mode == "nn" && c == 4;
-    offset_t h_split = align(h, absl::GetFlag(FLAGS_alignment)), w_split = align(w, absl::GetFlag(FLAGS_alignment));
+    int32_t h_split = align(h, absl::GetFlag(FLAGS_alignment)), w_split = align(w, absl::GetFlag(FLAGS_alignment));
 
-    split_range<offset_t>(
+    split_range<int32_t>(
         h_split, absl::GetFlag(FLAGS_tile_height), absl::GetFlag(FLAGS_tile_pad), absl::GetFlag(FLAGS_extend_grace),
-        [&, h = h, w = w](offset_t y, offset_t th, bool h_beg, bool h_end) {
-          return split_range<offset_t>(
+        [&, h = h, w = w](int32_t y, int32_t th, bool h_beg, bool h_end) {
+          return split_range<int32_t>(
               w_split, absl::GetFlag(FLAGS_tile_width), absl::GetFlag(FLAGS_tile_pad), absl::GetFlag(FLAGS_extend_grace),
-              [&](offset_t x, offset_t tw, bool w_beg, bool w_end) -> bool {
+              [&](int32_t x, int32_t tw, bool w_beg, bool w_end) -> bool {
                 auto tile_start = hr_clock::now();
 
                 auto input_tile = ctx.in_image.slice<0>(y, std::min(y + th, h)).slice<1>(x, std::min(x + tw, w));
-                md_view<float, 3> input_tensor = {reinterpret_cast<float *>(session->input), {3, th, tw}};
-                md_view<half, 3> input_tensor_fp16 = {reinterpret_cast<half *>(session->input), {3, th, tw}};
+                md_view<float, int32_t, 3> input_tensor = {reinterpret_cast<float *>(session->input), {3, th, tw}};
+                md_view<half, int32_t, 3> input_tensor_fp16 = {reinterpret_cast<half *>(session->input), {3, th, tw}};
 
                 bool first_tile = h_beg && w_beg;
 
@@ -407,11 +407,11 @@ static void pixel_export_worker(ichan &in, ichan &out) {
       out_memory = std::move(ctx.out_memory);
     }
 
-    md_view<float, 3> output_tensor =
+    md_view<float, int32_t, 3> output_tensor =
         {reinterpret_cast<float *>(session->output), {3, ctx.th * h_scale, ctx.tw * w_scale}};
-    md_view<half, 3> output_tensor_fp16 =
+    md_view<half, int32_t, 3> output_tensor_fp16 =
         {reinterpret_cast<half *>(session->output), {3, ctx.th * h_scale, ctx.tw * w_scale}};
-    pad_descriptor pad_desc{absl::GetFlag(FLAGS_tile_pad) * h_scale, ctx.h_beg, ctx.h_end, ctx.w_beg, ctx.w_end};
+    pad_descriptor pad_desc{static_cast<int32_t>(absl::GetFlag(FLAGS_tile_pad) * h_scale), ctx.h_beg, ctx.h_end, ctx.w_beg, ctx.w_end};
     auto [h, w, _] = ctx.out_image.shape;
     auto out_tile = ctx.out_image
         .slice<0>(h_scale * ctx.y, std::min(h_scale * (ctx.y + ctx.th), h))
@@ -481,8 +481,8 @@ static void image_save_worker(ichan &in, chan *out) {
 
     if (ctx.post_scale != 1.0) {
       auto [ho, wo, co] = ctx.out_image.shape;
-      offset_t hs = round(ctx.post_scale * ho);
-      offset_t ws = round(ctx.post_scale * wo);
+      int32_t hs = round(ctx.post_scale * ho);
+      int32_t ws = round(ctx.post_scale * wo);
       auto [scaled_view, scaled_ptr] = alloc_buffer<uint8_t, 3>({hs, ws, co});
       if (co == 3) {
         libyuv::RGBScale(ctx.out_image.data,

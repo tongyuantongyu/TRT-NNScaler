@@ -5,8 +5,8 @@ cmake_policy(SET CMP0097 NEW)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CUDA_STANDARD 20)
 
 project(TRT-NNScaler LANGUAGES C CXX)
 
@@ -53,7 +53,7 @@ FetchContent_Declare(
 FetchContent_Declare(
         abseil
         GIT_REPOSITORY https://github.com/abseil/abseil-cpp
-        GIT_TAG 20230802.1
+        GIT_TAG 20240116.1
         GIT_SHALLOW    TRUE
         GIT_PROGRESS   TRUE
         OVERRIDE_FIND_PACKAGE
@@ -62,7 +62,7 @@ FetchContent_Declare(
 FetchContent_Declare(
         grpc
         GIT_REPOSITORY https://github.com/grpc/grpc
-        GIT_TAG v1.59.1
+        GIT_TAG v1.62.1
         GIT_SHALLOW    TRUE
         GIT_PROGRESS   TRUE
         GIT_SUBMODULES "third_party/boringssl-with-bazel;third_party/cares/cares;third_party/re2;third_party/zlib;third_party/envoy-api;third_party/googleapis;third_party/opencensus-proto;third_party/xds;third_party/protobuf"
@@ -84,6 +84,7 @@ add_library(image_fpng STATIC ${fpng_SOURCE_DIR}/src/fpng.h ${fpng_SOURCE_DIR}/s
 target_compile_definitions(image_fpng PUBLIC FPNG_NO_STDIO)
 target_compile_options(image_fpng PRIVATE -msse4.1 -mpclmul -fno-strict-aliasing)
 target_include_directories(image_fpng INTERFACE ${fpng_SOURCE_DIR}/src)
+target_link_libraries(image_fpng PRIVATE CCCL::CCCL)
 
 if(USE_WUFFS_LIBJPEG_READER)
     FetchContent_GetProperties(wuffs)
@@ -97,6 +98,7 @@ if(USE_WUFFS_LIBJPEG_READER)
 
     find_package(PkgConfig)
     pkg_check_modules(JPEG REQUIRED IMPORTED_TARGET libjpeg)
+    target_link_libraries(image_wuffs PRIVATE CCCL::CCCL)
     target_link_libraries(image_wuffs PUBLIC PkgConfig::JPEG)
 endif()
 
@@ -166,14 +168,28 @@ endif()
 
 find_package(CUDAToolkit 12.0 REQUIRED)
 find_package(TensorRT 8.6.0 REQUIRED COMPONENTS OnnxParser)
+find_package(CCCL 2 REQUIRED)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 enable_language(CUDA)
+
+# 997: virtual_function_decl_hidden  // suppress the warning of tensorrt hiding deprecated plugin methods
+# 20208: double_for_long_double  // long double is required for user-defined literal. We are fine with float precision
+add_compile_options("$<$<COMPILE_LANGUAGE:CUDA>:--diag-suppress=997,20208>")
+
 add_library(reformat_cuda STATIC reformat/reformat_cuda.h reformat/reformat.cu)
 
 add_library(reformat INTERFACE reformat/reformat.h reformat/reformat_cuda.h)
-target_link_libraries(reformat INTERFACE CUDA::cudart reformat_cuda)
+target_link_libraries(reformat INTERFACE CUDA::cudart reformat_cuda CCCL::CCCL)
+
+add_library(trt_plugins STATIC
+        plugins/plugin_base.h plugins/utils.h
+        plugins/resize.cu
+)
+
+target_include_directories(trt_plugins PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/plugins)
+target_link_libraries(trt_plugins PUBLIC CUDA::cudart TensorRT::NvInfer CCCL::CCCL)
 
 add_library(cmd_common STATIC
         md_view.h
@@ -181,20 +197,23 @@ add_library(cmd_common STATIC
         logging.h
         channel.h
         image_io.h
+        timing.h
+        cmd_common.h
         optimize.cpp
         inference.cpp
         image_fpng.cpp
-        workers.cpp
-        cmd_common.h)
+        workers.cpp)
 
 target_compile_definitions(cmd_common PUBLIC _UNICODE)
 target_compile_options(cmd_common PRIVATE -mavx2 -mfma)
 target_link_libraries(cmd_common PUBLIC
         image_fpng
         reformat
+        trt_plugins
 
         yuv
 
+        CCCL::CCCL
         CUDA::cudart
         TensorRT::NvInfer
 
@@ -210,7 +229,7 @@ target_include_directories(cmd_common PRIVATE ${libyuv_SOURCE_DIR}/include)
 
 if (WIN32 AND USE_WIC_READER)
     add_library(image_wic OBJECT image_wic.cpp image_io.h)
-    target_link_libraries(image_wic PUBLIC shlwapi windowscodecs)
+    target_link_libraries(image_wic PUBLIC shlwapi windowscodecs CCCL::CCCL)
 
     target_link_libraries(cmd_common PUBLIC image_wic)
 elseif (USE_WUFFS_LIBJPEG_READER)

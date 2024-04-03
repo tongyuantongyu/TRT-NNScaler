@@ -10,6 +10,7 @@
 #include "absl/flags/parse.h"
 #include "absl/flags/usage.h"
 #include "logging.h"
+#include "logging_trt.h"
 
 static Logger gLogger;
 
@@ -63,10 +64,16 @@ int main(int argc, char** argv) {
   layer_info_file.replace_extension();
   layer_info_file += "_layer_info.json";
   std::ofstream info(layer_info_file, std::ios::binary);
-  for (int i = 0; i < engine->getNbLayers(); ++i) {
-    info << "----- [ #" << i << " ] -----------------------------------------------------------------\n";
-    info << inspector->getLayerInformation(i, nvinfer1::LayerInformationFormat::kJSON) << "\n\n";
+  info << "[\n";
+  auto n = engine->getNbLayers();
+  for (int i = 0; i < n; ++i) {
+    info << inspector->getLayerInformation(i, nvinfer1::LayerInformationFormat::kJSON);
+    if (i + 1 != n) {
+      info << ",\n";
+    }
   }
-
+  info << "\n]";
   info.close();
+
+
 }

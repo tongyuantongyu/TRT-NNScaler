@@ -10,7 +10,7 @@
 
 static std::once_flag fpng_inited;
 
-std::string save_image_png(Work::output_t file, md_view<uint8_t, 3> data) {
+std::string save_image_png(Work::output_t file, md_view<uint8_t, int32_t, 3> data) {
   std::call_once(fpng_inited, fpng::fpng_init);
 
   auto [height, width, components] = data.shape;

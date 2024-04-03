@@ -141,7 +141,7 @@ my_error_exit (j_common_ptr cinfo)
   longjmp(myerr->setjmp_buffer, 1);
 }
 
-std::optional<std::pair<shape_t<3>, mem_owner>>
+std::optional<std::pair<shape_t<int32_t, 3>, mem_owner>>
 load_image_jpeg(std::variant<FILE *, std::vector<uint8_t>> f) {
   struct jpeg_decompress_struct cinfo;
   struct my_error_mgr jerr;
@@ -183,7 +183,7 @@ load_image_jpeg(std::variant<FILE *, std::vector<uint8_t>> f) {
   return std::make_pair(in_view.shape, std::move(in_ptr));
 }
 
-std::variant<std::pair<shape_t<3>, mem_owner>, std::string>
+std::variant<std::pair<shape_t<int32_t, 3>, mem_owner>, std::string>
 load_image(Work::input_t file, bool ignore_alpha) {
   wuffs_aux::DecodeImageResult res("");
   if (file.index() == 0) {
@@ -249,9 +249,9 @@ load_image(Work::input_t file, bool ignore_alpha) {
     }
   }
 
-  md_view in_view{reinterpret_cast<uint8_t *>(res.pixbuf_mem_owner.get()),
-                  {res.pixbuf.pixcfg.height(),
-                   res.pixbuf.pixcfg.width(),
+  md_view<uint8_t, int32_t, 3> in_view{reinterpret_cast<uint8_t *>(res.pixbuf_mem_owner.get()),
+                  {static_cast<int>(res.pixbuf.pixcfg.height()),
+                   static_cast<int>(res.pixbuf.pixcfg.width()),
                    res.pixbuf.pixcfg.pixel_format().transparency() ? 4 : 3}};
 
   std::unique_ptr<uint8_t[]> in_ptr(reinterpret_cast<uint8_t*>(res.pixbuf_mem_owner.release()));

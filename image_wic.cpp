@@ -81,14 +81,14 @@ static std::array<GUID, 21> alpha_formats{
 static GUID desire_format_opaque = GUID_WICPixelFormat24bppBGR;
 static GUID desire_format_alpha = GUID_WICPixelFormat32bppPBGRA;
 
-std::variant<std::pair<shape_t<3>, mem_owner>, std::string>
+std::variant<std::pair<shape_t<int32_t, 3>, mem_owner>, std::string>
 load_image(Work::input_t file, bool ignore_alpha) {
   IStream *pStream = nullptr;
   IWICBitmapDecoder *pDecoder = nullptr;
   IWICBitmapFrameDecode *pFrame = nullptr;
   IWICFormatConverter *pConverter = nullptr;
   HRESULT hr;
-  md_view<uint8_t, 3> view;
+  md_view<uint8_t, int32_t, 3> view;
   mem_owner pixels;
 
   if (file.index() == 0) {
@@ -156,7 +156,7 @@ load_image(Work::input_t file, bool ignore_alpha) {
   return std::make_pair(view.shape, std::move(pixels));
 }
 
-std::string save_image(Work::output_t file, md_view<uint8_t, 3> data) {
+std::string save_image(Work::output_t file, md_view<uint8_t, size_t, 3> data) {
   IWICStream *pStream = nullptr;
   IWICBitmapEncoder *pEncoder = nullptr;
   IWICBitmapFrameEncode *pFrame = nullptr;

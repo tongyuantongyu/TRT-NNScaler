@@ -72,7 +72,12 @@ static size_t alignment(size_t size, size_t alignment) {
 }
 
 InferenceSession::InferenceSession(InferenceContext &ctx)
-    : ctx(ctx), context {ctx.engine->createExecutionContextWithoutDeviceMemory()},
+    : ctx(ctx),
+    #if NV_TENSORRT_MAJOR >= 10
+    context {ctx.engine->createExecutionContext(nvinfer1::ExecutionContextAllocationStrategy::kUSER_MANAGED)},
+    #else
+    context {ctx.engine->createExecutionContextWithoutDeviceMemory()},
+    #endif
       last_batch(-1), last_width(-1), last_height(-1), good_ {}, stream {},
       execution_memory {}, input {}, output{}, input_consumed {} {}
 

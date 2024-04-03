@@ -12,6 +12,7 @@
 #include "nn-scaler.h"
 #include "infer_engine.h"
 #include "reformat/reformat.h"
+#include "layers.h"
 #include "image_io.h"
 #include "logging_trt.h"
 
@@ -23,7 +24,6 @@
 
 ABSL_DECLARE_FLAG(int, stderrthreshold);
 ABSL_DECLARE_FLAG(bool, log_prefix);
-ABSL_FLAG(uint32_t, v, 0, "verbosity log level");
 ABSL_FLAG(std::string, model_path, "models", "path to the folder to save model files");
 
 InferenceSession *session = nullptr;
@@ -52,11 +52,11 @@ extern "C" int32_t getInferLibVersion_UseHeader() noexcept {
 #pragma comment(linker, "/alternatename:getInferLibVersion=getInferLibVersion_UseHeader")
 #endif
 
-
 static Logger gLogger;
 
 ABSL_FLAG(bool, fp16, false, "use FP16 processing, allow FP16 in engine");
 ABSL_FLAG(bool, int8, false, "allow INT8 in engine");
+ABSL_FLAG(bool, force_precision, false, "Force precision config in model");
 ABSL_FLAG(bool, external, false, "use external algorithms from cuDNN and cuBLAS");
 ABSL_FLAG(bool, low_mem, false, "tweak configs to reduce memory consumption");
 ABSL_FLAG(int32_t, aux_stream, -1, "Auxiliary streams to use");
@@ -119,6 +119,10 @@ void setup_session(bool handle_alpha) {
   }
 
   // ----------------------------------
+  // Layers
+  plugins::register_resize_plugin();
+
+  // ----------------------------------
   // Engine
   auto max_width = absl::GetFlag(FLAGS_tile_width) + absl::GetFlag(FLAGS_extend_grace);
   auto max_height = absl::GetFlag(FLAGS_tile_height) + absl::GetFlag(FLAGS_extend_grace);
@@ -145,6 +149,7 @@ void setup_session(bool handle_alpha) {
           absl::GetFlag(FLAGS_aux_stream),
           absl::GetFlag(FLAGS_fp16),
           absl::GetFlag(FLAGS_int8),
+          absl::GetFlag(FLAGS_force_precision),
           absl::GetFlag(FLAGS_external),
           absl::GetFlag(FLAGS_low_mem),
       },

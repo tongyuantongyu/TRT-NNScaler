@@ -6,14 +6,6 @@
 #include "absl/flags/declare.h"
 #include "absl/log/log.h"
 
-ABSL_DECLARE_FLAG(uint32_t, v);
-
-inline bool should_log_at(int n) {
-  return absl::GetFlag(FLAGS_v) >= n;
-}
-
-#define VLOG(n) LOG_IF(INFO, should_log_at(n))
-
 static std::string u8s(const std::filesystem::path& p) {
 #ifdef _WIN32
 #ifdef __cpp_lib_char8_t
