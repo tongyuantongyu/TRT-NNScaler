@@ -253,7 +253,9 @@ if (WITH_RPC_SERVICE)
     set(PROTO_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
     target_include_directories(scaler-proto PUBLIC "$<BUILD_INTERFACE:${PROTO_BINARY_DIR}>")
-    target_compile_options(scaler-proto PUBLIC -Wno-inconsistent-missing-override)
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(scaler-proto PUBLIC -Wno-inconsistent-missing-override)
+    endif()
 
     protobuf_generate(
             TARGET scaler-proto

@@ -268,6 +268,7 @@ static void pixel_import_worker(ichan &in, ichan &out) {
                   };
 
                   if (first_tile) {
+                    tile_ctx.is_begin = true;
                     tile_ctx.output = std::move(ctx.output);
                     tile_ctx.image_start = ctx.image_start;
                     tile_ctx.out_memory = std::move(ctx.out_memory);
