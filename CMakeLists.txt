@@ -68,10 +68,17 @@ FetchContent_Declare(
         GIT_SUBMODULES "third_party/boringssl-with-bazel;third_party/cares/cares;third_party/re2;third_party/zlib;third_party/envoy-api;third_party/googleapis;third_party/opencensus-proto;third_party/xds;third_party/protobuf"
 )
 
+option(LIBYUV_USR_GITHUB_MIRROR "Use an UNOFFICIAL mirror for libyuv" OFF)
+
+if (LIBYUV_USR_GITHUB_MIRROR)
+    set(LIBYUV_GIT_REPOSITORY "https://github.com/lemenkov/libyuv")
+else ()
+    set(LIBYUV_GIT_REPOSITORY "https://chromium.googlesource.com/libyuv/libyuv")
+endif ()
 FetchContent_Declare(
         libyuv
-        GIT_REPOSITORY https://chromium.googlesource.com/libyuv/libyuv
-        GIT_TAG 331c361581896292fb46c8c6905e41262b7ca95f
+        GIT_REPOSITORY ${LIBYUV_GIT_REPOSITORY}
+        GIT_TAG efd164d64ee4aab463e00f69e0de7f53ca91865d
         GIT_PROGRESS   TRUE
 )
 
