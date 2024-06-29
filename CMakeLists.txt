@@ -309,19 +309,3 @@ if (WITH_RPC_SERVICE)
             OUTPUT_NAME NNScalerClient
     )
 endif ()
-
-# Model inspector
-
-add_executable(inspector inspector.cpp)
-target_link_libraries(inspector PUBLIC
-        CUDA::cudart
-        TensorRT::NvInfer
-
-        absl::flags
-        absl::flags_parse
-        absl::flags_usage
-
-        absl::log
-        absl::log_flags
-        absl::log_initialize
-)
