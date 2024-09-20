@@ -86,6 +86,55 @@ std::string output_repr(Work::output_t &output, bool incr=true) {
   }
 }
 
+
+// Scale down at most 1/2 each time to ensure quality.
+static std::pair<md_view<uint8_t, int32_t, 3>, mem_owner> scale_view(md_view<uint8_t, int32_t, 3> src, double scale) {
+  const auto [h0, w0, c] = src.shape;
+  const int32_t hn = std::round(scale * h0);
+  const int32_t wn = std::round(scale * w0);
+
+  int32_t hi = h0, wi = w0;
+  int32_t hj, wj;
+  md_view<uint8_t, int32_t, 3> scaled_view{};
+  mem_owner src_ptr, scaled_ptr;
+
+  do {
+    hj = std::max((hi + 1) / 2, hn);
+    wj = std::max((wi + 1) / 2, wn);
+
+    std::tie(scaled_view, scaled_ptr) = alloc_buffer<uint8_t>(hj, wj, c);
+    if (c == 3) {
+      libyuv::RGBScale(src.data,
+                       src.at(0).size(),
+                       wi,
+                       hi,
+                       scaled_view.data,
+                       scaled_view.at(0).size(),
+                       wj,
+                       hj,
+                       libyuv::kFilterBox);
+    }
+    else {
+      libyuv::ARGBScale(src.data,
+                        src.at(0).size(),
+                        wi,
+                        hi,
+                        scaled_view.data,
+                        scaled_view.at(0).size(),
+                        wj,
+                        hj,
+                        libyuv::kFilterBox);
+    }
+
+    hi = hj;
+    wi = wj;
+    src = scaled_view;
+    src_ptr.swap(scaled_ptr);
+  } while (hj != hn && wj != wn);
+
+  return {src, std::move(src_ptr)};
+}
+
 static void image_load_worker(chan &in, ichan &out) {
   while (true) {
     auto i = in.get();
@@ -108,34 +157,7 @@ static void image_load_worker(chan &in, ichan &out) {
     auto [in_shape, in_ptr] = std::move(std::get<0>(img_ret));
     md_view<uint8_t, int32_t, 3> in_view{reinterpret_cast<uint8_t *>(in_ptr.get()), in_shape};
     if (c.pre_scale != 1.0) {
-      auto [ho, wo, co] = in_view.shape;
-      int32_t hs = round(c.pre_scale * ho);
-      int32_t ws = round(c.pre_scale * wo);
-      auto [scaled_view, scaled_ptr] = alloc_buffer<uint8_t>(hs, ws, co);
-      if (co == 3) {
-        libyuv::RGBScale(in_view.data,
-                         in_view.at(0).size(),
-                         wo,
-                         ho,
-                         scaled_view.data,
-                         scaled_view.at(0).size(),
-                         ws,
-                         hs,
-                         libyuv::kFilterBox);
-      }
-      else {
-        libyuv::ARGBScale(in_view.data,
-                          in_view.at(0).size(),
-                          wo,
-                          ho,
-                          scaled_view.data,
-                          scaled_view.at(0).size(),
-                          ws,
-                          hs,
-                          libyuv::kFilterBox);
-      }
-      in_view = scaled_view;
-      in_ptr.swap(scaled_ptr);
+      std::tie(in_view, in_ptr) = scale_view(in_view, c.pre_scale);
     }
 
     auto [h, w, ch] = in_view.shape;
@@ -481,34 +503,7 @@ static void image_save_worker(ichan &in, chan *out) {
     // TODO: wait alpha finish when alpha = filter
 
     if (ctx.post_scale != 1.0) {
-      auto [ho, wo, co] = ctx.out_image.shape;
-      int32_t hs = round(ctx.post_scale * ho);
-      int32_t ws = round(ctx.post_scale * wo);
-      auto [scaled_view, scaled_ptr] = alloc_buffer<uint8_t, 3>({hs, ws, co});
-      if (co == 3) {
-        libyuv::RGBScale(ctx.out_image.data,
-                         ctx.out_image.at(0).size(),
-                         wo,
-                         ho,
-                         scaled_view.data,
-                         scaled_view.at(0).size(),
-                         ws,
-                         hs,
-                         libyuv::kFilterBox);
-      }
-      else {
-        libyuv::ARGBScale(ctx.out_image.data,
-                          ctx.out_image.at(0).size(),
-                          wo,
-                          ho,
-                          scaled_view.data,
-                          scaled_view.at(0).size(),
-                          ws,
-                          hs,
-                          libyuv::kFilterBox);
-      }
-      ctx.out_image = scaled_view;
-      ctx.out_memory.swap(scaled_ptr);
+      std::tie(ctx.out_image, ctx.out_memory) = scale_view(ctx.out_image.as_view(), ctx.post_scale);
     }
 
     std::string output = output_repr(ctx.output);
