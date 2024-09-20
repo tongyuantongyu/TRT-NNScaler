@@ -17,7 +17,7 @@ std::string save_image_png(Work::output_t file, md_view<uint8_t, int32_t, 3> dat
   std::vector<uint8_t> output;
   if (!fpng::fpng_encode_image_to_memory(data.data, width, height, components, output)) {
     return "fpng encode fail";
-  };
+  }
 
   if (file.index() == 0) {
     std::ofstream of(std::get<0>(file), std::ios::out | std::ios::binary | std::ios::trunc);

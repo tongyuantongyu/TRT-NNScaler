@@ -53,7 +53,7 @@ FetchContent_Declare(
 FetchContent_Declare(
         abseil
         GIT_REPOSITORY https://github.com/abseil/abseil-cpp
-        GIT_TAG 20240116.1
+        GIT_TAG 20240722.0
         GIT_SHALLOW    TRUE
         GIT_PROGRESS   TRUE
         OVERRIDE_FIND_PACKAGE
@@ -62,7 +62,7 @@ FetchContent_Declare(
 FetchContent_Declare(
         grpc
         GIT_REPOSITORY https://github.com/grpc/grpc
-        GIT_TAG v1.62.1
+        GIT_TAG v1.66.1
         GIT_SHALLOW    TRUE
         GIT_PROGRESS   TRUE
         GIT_SUBMODULES "third_party/boringssl-with-bazel;third_party/cares/cares;third_party/re2;third_party/zlib;third_party/envoy-api;third_party/googleapis;third_party/opencensus-proto;third_party/xds;third_party/protobuf"
@@ -78,7 +78,7 @@ endif ()
 FetchContent_Declare(
         libyuv
         GIT_REPOSITORY ${LIBYUV_GIT_REPOSITORY}
-        GIT_TAG efd164d64ee4aab463e00f69e0de7f53ca91865d
+        GIT_TAG 0d5a31eccb71d2745f0b5f231909f221743b0a5b
         GIT_PROGRESS   TRUE
 )
 
