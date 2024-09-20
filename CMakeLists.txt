@@ -190,14 +190,6 @@ add_library(reformat_cuda STATIC reformat/reformat_cuda.h reformat/reformat.cu)
 add_library(reformat INTERFACE reformat/reformat.h reformat/reformat_cuda.h)
 target_link_libraries(reformat INTERFACE CUDA::cudart reformat_cuda CCCL::CCCL)
 
-add_library(trt_plugins STATIC
-        plugins/plugin_base.h plugins/utils.h
-        plugins/resize.cu
-)
-
-target_include_directories(trt_plugins PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/plugins)
-target_link_libraries(trt_plugins PUBLIC CUDA::cudart TensorRT::NvInfer CCCL::CCCL)
-
 add_library(cmd_common STATIC
         md_view.h
         nn-scaler.h
@@ -216,7 +208,6 @@ target_compile_options(cmd_common PRIVATE -mavx2 -mfma)
 target_link_libraries(cmd_common PUBLIC
         image_fpng
         reformat
-        trt_plugins
 
         yuv
 
@@ -233,6 +224,17 @@ target_link_libraries(cmd_common PUBLIC
         absl::log_initialize
 )
 target_include_directories(cmd_common PRIVATE ${libyuv_SOURCE_DIR}/include)
+
+if (TensorRT_VERSION_STRING VERSION_LESS 9.0)
+    add_library(trt_plugins STATIC
+            plugins/plugin_base.h plugins/utils.h
+            plugins/resize.cu
+    )
+
+    target_include_directories(trt_plugins PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/plugins)
+    target_link_libraries(trt_plugins PUBLIC CUDA::cudart TensorRT::NvInfer CCCL::CCCL)
+    target_link_libraries(cmd_common PUBLIC trt_plugins)
+endif ()
 
 if (WIN32 AND USE_WIC_READER)
     add_library(image_wic OBJECT image_wic.cpp image_io.h)

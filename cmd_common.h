@@ -120,7 +120,9 @@ void setup_session(bool handle_alpha) {
 
   // ----------------------------------
   // Layers
+#if NV_TENSORRT_MAJOR < 9
   plugins::register_resize_plugin();
+#endif
 
   // ----------------------------------
   // Engine
