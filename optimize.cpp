@@ -23,17 +23,20 @@ ABSL_FLAG(std::string, model, "model.onnx", "Source model name");
 
 nvinfer1::IBuilderConfig *OptimizationContext::prepareConfig() const {
   auto conf = builder->createBuilderConfig();
-  if (config.use_fp16) {
-    conf->setFlag(nvinfer1::BuilderFlag::kFP16);
-  }
-  if (config.use_int8) {
-    conf->setFlag(nvinfer1::BuilderFlag::kINT8);
+  if (!config.use_strong_type) {
+    if (config.use_fp16) {
+      conf->setFlag(nvinfer1::BuilderFlag::kFP16);
+    }
+    if (config.use_int8) {
+      conf->setFlag(nvinfer1::BuilderFlag::kINT8);
+    }
   }
   conf->setFlag(nvinfer1::BuilderFlag::kTF32);
   conf->setFlag(nvinfer1::BuilderFlag::kSPARSE_WEIGHTS);
   if (config.force_precision) {
     conf->setFlag(nvinfer1::BuilderFlag::kOBEY_PRECISION_CONSTRAINTS);
-  } else {
+  }
+  else {
 #if NV_TENSORRT_MAJOR == 8
     conf->setFlag(nvinfer1::BuilderFlag::kPREFER_PRECISION_CONSTRAINTS);
 #endif
@@ -62,7 +65,7 @@ nvinfer1::IBuilderConfig *OptimizationContext::prepareConfig() const {
 #endif
   if (config.low_mem) {
     conf->setTacticSources(conf->getTacticSources() & ~nvinfer1::TacticSources(
-        (1u << int32_t(nvinfer1::TacticSource::kEDGE_MASK_CONVOLUTIONS))));
+                               (1u << int32_t(nvinfer1::TacticSource::kEDGE_MASK_CONVOLUTIONS))));
   }
 
   if (cache != nullptr) {
@@ -74,16 +77,16 @@ nvinfer1::IBuilderConfig *OptimizationContext::prepareConfig() const {
 
 OptimizationContext::OptimizationContext(ScalerConfig config, nvinfer1::ILogger &logger,
                                          std::filesystem::path path_prefix_)
-    : config(config), logger(logger), path_prefix(std::move(path_prefix_)),
-      builder(nvinfer1::createInferBuilder(logger)), cache(nullptr), prop{}, total_memory{} {
+  : config(config), logger(logger), path_prefix(std::move(path_prefix_)),
+    builder(nvinfer1::createInferBuilder(logger)), cache(nullptr), prop{}, total_memory{} {
   auto conf = builder->createBuilderConfig();
   cudaMemGetInfo(nullptr, &total_memory);
   cudaGetDeviceProperties(&prop, 0);
   VLOG(1) << "Device has " << total_memory << " byte memory.";
 
-  if (builder->platformHasFastFp16() && !config.use_fp16) {
+  if (!config.use_fp16) {
     // CUDA Architecture 6.1 (Pascal, GTX10xx series) does not have really useful FP16.
-    if (prop.major != 6 || prop.minor != 1) {
+    if (prop.major > 6 || (prop.major == 6 && prop.minor != 1)) {
       LOG(WARNING) << "Fast FP16 is available but not enabled.";
     }
   }
@@ -109,10 +112,14 @@ OptimizationContext::OptimizationContext(ScalerConfig config, nvinfer1::ILogger 
 
 nvinfer1::INetworkDefinition *OptimizationContext::createNetwork() const {
 #if NV_TENSORRT_MAJOR >= 10
-  return builder->createNetworkV2(0u);
+  uint32_t flags = 0;
 #else
-  return builder->createNetworkV2(1u << uint32_t(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH));
+  uint32_t flags = 1u << uint32_t(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
 #endif
+  if (config.use_strong_type) {
+    flags |= 1u << uint32_t(nvinfer1::NetworkDefinitionCreationFlag::kSTRONGLY_TYPED);
+  }
+  return builder->createNetworkV2(flags);
 }
 
 OptimizationContext::~OptimizationContext() {
@@ -143,12 +150,23 @@ std::string OptimizationContext::optimize() {
   input.clear();
   VLOG(1) << "Source model loaded.";
 
-  network->getInput(0)->setName("input");
-  network->getOutput(0)->setName("output");
+  auto inputTensor = network->getInput(0);
+  auto outputTensor = network->getOutput(0);
+
+  inputTensor->setName("input");
+  outputTensor->setName("output");
 
   auto ioDataType = config.use_fp16 ? nvinfer1::DataType::kHALF : nvinfer1::DataType::kFLOAT;
-  network->getInput(0)->setType(ioDataType);
-  network->getOutput(0)->setType(ioDataType);
+  inputTensor->setType(ioDataType);
+  outputTensor->setType(ioDataType);
+
+  auto allowedFormats = 1u << uint32_t(nvinfer1::TensorFormat::kLINEAR) |//
+                        1u << uint32_t(nvinfer1::TensorFormat::kCHW4) |//
+                        1u << uint32_t(nvinfer1::TensorFormat::kHWC8) |//
+                        1u << uint32_t(nvinfer1::TensorFormat::kCHW32);
+  // auto allowedFormats = 1u << uint32_t(nvinfer1::TensorFormat::kLINEAR);
+  inputTensor->setAllowedFormats(allowedFormats);
+  outputTensor->setAllowedFormats(allowedFormats);
 
   auto height = config.input_height;
   auto width = config.input_width;
@@ -184,11 +202,11 @@ std::string OptimizationContext::optimize() {
   auto engine = runtime->deserializeCudaEngine(modelStream->data(), modelStream->size());
   auto inspector = engine->createEngineInspector();
 
-  #if NV_TENSORRT_MAJOR >= 10
+#if NV_TENSORRT_MAJOR >= 10
   auto context = engine->createExecutionContext(nvinfer1::ExecutionContextAllocationStrategy::kUSER_MANAGED);
-  #else
+#else
   auto context = engine->createExecutionContextWithoutDeviceMemory();
-  #endif
+#endif
 
   context->setOptimizationProfileAsync(0, nullptr);
   cudaStreamSynchronize(nullptr);

@@ -6,18 +6,23 @@
 
 #include "md_view.h"
 
+template<typename T, size_t DIMS = 3>
+using patch = md_uview<T, int32_t, DIMS, int64_t>;
+
 template<class F, class U>
-void import_pixel_cuda(md_view<F, int32_t, 3> dst,
-                       md_view<F, int32_t, 2> dst_alpha,
-                       md_view<const U, int32_t, 3> src,
+void import_pixel_cuda(patch<F> dst,
+                       patch<const U> src,
                        float a,
                        float b,
+                       bool is_alpha,
                        cudaStream_t stream);
 
 template<class F, class U>
-void export_pixel_cuda(md_view<U, int32_t, 3> dst,
-                       md_uview<const F, int32_t, 3> src,
-                       md_uview<const F, int32_t, 2> src_alpha,
+void export_pixel_cuda(patch<U> dst,
+                       patch<const F> src,
                        float a,
                        float b,
+                       float l,
+                       float h,
+                       bool is_alpha,
                        cudaStream_t stream);

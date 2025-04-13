@@ -69,7 +69,7 @@ class NNScalerImpl final : public NNScaler::Service {
     auto res_future = res_promise.get_future();
 
     r.works.put({
-      input,
+      std::move(input),
       std::move(res_promise),
       std::move(err_promise),
 

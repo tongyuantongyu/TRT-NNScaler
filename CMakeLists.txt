@@ -11,11 +11,7 @@ set(CMAKE_CUDA_STANDARD 20)
 project(TRT-NNScaler LANGUAGES C CXX)
 
 if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    if (CMAKE_SYSTEM_PROCESSOR STREQUAL aarch64)
-        set(CMAKE_CUDA_ARCHITECTURES 62 72 87)
-    else ()
-        set(CMAKE_CUDA_ARCHITECTURES 61 70 75 80 86 89 90)
-    endif ()
+    set(CMAKE_CUDA_ARCHITECTURES 61 70 75 80 86 89 90a 100a 120a)
 endif ()
 
 if (MSVC)
@@ -113,6 +109,11 @@ enable_language(CUDA)
 # 997: virtual_function_decl_hidden  // suppress the warning of tensorrt hiding deprecated plugin methods
 # 20208: double_for_long_double  // long double is required for user-defined literal. We are fine with float precision
 add_compile_options("$<$<COMPILE_LANGUAGE:CUDA>:--diag-suppress=997,20208>")
+
+option(CUDA_DEVICE_DEBUG "Enable CUDA Device Debug" OFF)
+if (CUDA_DEVICE_DEBUG)
+    add_compile_options("$<$<COMPILE_LANGUAGE:CUDA>:-G>")
+endif()
 
 add_library(reformat_cuda STATIC reformat/reformat_cuda.h reformat/reformat.cu)
 

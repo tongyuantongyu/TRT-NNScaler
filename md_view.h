@@ -102,6 +102,11 @@ struct stride_t : simple_array<offset_t, DIMS> {
   constexpr util_attrs stride_t<offset_t, count> slice() const noexcept {
     return {_base::template slice<begin, count>()};
   }
+
+  template<std::size_t... Idx>
+  constexpr util_attrs stride_t<offset_t, sizeof...(Idx)> gather() const noexcept {
+    return {_base::template gather<Idx...>()};
+  }
 };
 
 template<typename... Tp, typename = std::enable_if_t<(std::is_convertible_v<Tp, int32_t> && ...) &&
@@ -148,8 +153,8 @@ struct shape_t : simple_array<offset_t, DIMS> {
     return indexes;
   }
 
-  constexpr util_attrs offset_t count() const noexcept {
-    offset_t size = 1;
+  constexpr util_attrs int64_t count() const noexcept {
+    int64_t size = 1;
     for (const auto &s: *this) {
       size *= s;
     }
@@ -386,7 +391,7 @@ struct md_uview {
     return result;
   }
 
-  constexpr util_attrs bool is_contiguous() const { return this->shape.stride() == this->stride; }
+  constexpr util_attrs bool is_contiguous() const { return this->shape.stride().widen() == this->stride.widen(); }
 
   template<std::size_t N_DIMS>
   constexpr util_attrs of_dim<N_DIMS> reshape(shape_t<offset_t, N_DIMS> new_shape) const {

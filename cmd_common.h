@@ -30,16 +30,11 @@ InferenceSession *session = nullptr;
 
 int using_io = 0;
 
-pixel_importer_cpu *importer_cpu = nullptr;
-pixel_exporter_cpu *exporter_cpu = nullptr;
-
 pixel_importer_gpu<float> *importer_gpu = nullptr;
 pixel_exporter_gpu<float> *exporter_gpu = nullptr;
 
 pixel_importer_gpu<half> *importer_gpu_fp16 = nullptr;
 pixel_exporter_gpu<half> *exporter_gpu_fp16 = nullptr;
-
-int32_t h_scale, w_scale;
 
 #if defined(__GNUC__)
 extern "C" __attribute__((weak)) int32_t getInferLibVersion() noexcept {
@@ -56,11 +51,11 @@ static Logger gLogger;
 
 ABSL_FLAG(bool, fp16, false, "use FP16 processing, allow FP16 in engine");
 ABSL_FLAG(bool, int8, false, "allow INT8 in engine");
+ABSL_FLAG(bool, strongly_typed, true, "enable strongly typed network definition");
 ABSL_FLAG(bool, force_precision, false, "Force precision config in model");
 ABSL_FLAG(bool, external, false, "use external algorithms from cuDNN and cuBLAS");
 ABSL_FLAG(bool, low_mem, false, "tweak configs to reduce memory consumption");
 ABSL_FLAG(int32_t, aux_stream, -1, "Auxiliary streams to use");
-ABSL_FLAG(std::string, reformatter, "auto", "reformatter used to import and export pixels: cpu, gpu, auto");
 
 ABSL_FLAG(uint32_t, tile_width, 512, "tile width");
 ABSL_FLAG(uint32_t, tile_height, 512, "tile height");
@@ -149,6 +144,7 @@ void setup_session(bool handle_alpha) {
            int(max_height)},
           1,
           absl::GetFlag(FLAGS_aux_stream),
+          absl::GetFlag(FLAGS_strongly_typed),
           absl::GetFlag(FLAGS_fp16),
           absl::GetFlag(FLAGS_int8),
           absl::GetFlag(FLAGS_force_precision),
@@ -183,47 +179,23 @@ void setup_session(bool handle_alpha) {
   if (!err.empty()) {
     LOG(QFATAL) << "Failed allocate memory for context: " << err;
   }
-  std::tie(h_scale, w_scale) = session->detect_scale();
-  if (h_scale == -1 || w_scale == -1) {
-    LOG(QFATAL) << "Bad model, can't detect scale ratio.";
-  }
-
-  if (h_scale != w_scale) {
-    LOG(QFATAL) << "different width and height scale ratio unimplemented.";
-  }
 
   // ------------------------------
   // Import & Export
-  auto max_size = size_t(max_width) * max_height;
+  auto max_size = size_t(max_width) * max_height * (handle_alpha ? 4 : 3);
+  auto max_size_out = max_size * session->scale_w * session->scale_h;
 
-  if (absl::GetFlag(FLAGS_reformatter) == "auto") {
-    absl::SetFlag(&FLAGS_reformatter, absl::GetFlag(FLAGS_fp16) ? "gpu" : "cpu");
-  }
-  if (absl::GetFlag(FLAGS_fp16) && absl::GetFlag(FLAGS_reformatter) == "cpu") {
-    LOG(QFATAL) << "CPU reformatter can not handle FP16.";
-  }
-
-  if (absl::GetFlag(FLAGS_reformatter) == "cpu") {
-    importer_cpu = new pixel_importer_cpu(max_size, handle_alpha);
-    exporter_cpu = new pixel_exporter_cpu(h_scale * w_scale * max_size, handle_alpha);
-    using_io = 0;
-  }
-  else if (absl::GetFlag(FLAGS_reformatter) == "gpu") {
-    if (absl::GetFlag(FLAGS_fp16)) {
-      importer_gpu_fp16 = new pixel_importer_gpu<half>(max_size, handle_alpha);
-      exporter_gpu_fp16 =
-          new pixel_exporter_gpu<half>(h_scale * w_scale * max_size, handle_alpha);
-      using_io = 2;
-    }
-    else {
-      importer_gpu = new pixel_importer_gpu<float>(max_size, handle_alpha);
-      exporter_gpu =
-          new pixel_exporter_gpu<float>(h_scale * w_scale * max_size, handle_alpha);
-      using_io = 1;
-    }
+  if (absl::GetFlag(FLAGS_fp16)) {
+    importer_gpu_fp16 = new pixel_importer_gpu<half>(max_size, 1);
+    exporter_gpu_fp16 =
+        new pixel_exporter_gpu<half>(max_size_out, 1);
+    using_io = 1;
   }
   else {
-    LOG(QFATAL) << "Unknown reformatter.";
+    importer_gpu = new pixel_importer_gpu<float>(max_size, 1);
+    exporter_gpu =
+        new pixel_exporter_gpu<float>(max_size_out, 1);
+    using_io = 0;
   }
 }
 

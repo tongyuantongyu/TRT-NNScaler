@@ -88,7 +88,7 @@ load_image(Work::input_t file, bool ignore_alpha) {
   IWICBitmapFrameDecode *pFrame = nullptr;
   IWICFormatConverter *pConverter = nullptr;
   HRESULT hr;
-  md_view<uint8_t, int32_t, 3> view;
+  md_view<uint8_t, int32_t, 3> view{};
   mem_owner pixels;
 
   if (file.index() == 0) {
@@ -120,7 +120,7 @@ load_image(Work::input_t file, bool ignore_alpha) {
     bool use_opaque = (ignore_alpha || !has_alpha);
     desire_format = use_opaque ? desire_format_opaque : desire_format_alpha;
 
-    std::tie(view, pixels) = alloc_buffer<uint8_t>(height, width, use_opaque ? 3 : 4);
+    std::tie(view, pixels) = alloc_buffer<uint8_t>(mem_owner::alloc_h2d, height, width, use_opaque ? 3 : 4);
     if (input_format != desire_format) {
       HR_CHECK(pFactory->CreateFormatConverter(&pConverter));
       HR_CHECK(pConverter->Initialize(pFrame,
@@ -133,13 +133,13 @@ load_image(Work::input_t file, bool ignore_alpha) {
       HR_CHECK(pConverter->CopyPixels(nullptr,
                                       view.at(0).size(),
                                       view.size(),
-                                      reinterpret_cast<BYTE *>(pixels.get())));
+                                      pixels.get()));
     }
     else {
       HR_CHECK(pFrame->CopyPixels(nullptr,
                                   view.at(0).size(),
                                   view.size(),
-                                  reinterpret_cast<BYTE *>(pixels.get())));
+                                  pixels.get()));
     }
   }
 

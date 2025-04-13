@@ -26,6 +26,8 @@
 #include <optional>
 #include <vector>
 
+#include "cuda_runtime.h"
+
 #include "jpeglib.h"
 #include <setjmp.h>
 
@@ -56,19 +58,19 @@ class MyDecodeImageCallbacks : public wuffs_aux::DecodeImageCallbacks {
     if ((len == 0) || (SIZE_MAX < len)) {
       return {wuffs_aux::DecodeImage_UnsupportedPixelConfiguration};
     }
-    auto mem = std::make_unique<uint8_t[]>(len);
+    auto mem_ = alloc_buffer<uint8_t>(mem_owner::alloc_h2d, len);
+    auto mem = wuffs_aux::MemOwner{mem_.second.release(), [](void *ptr) noexcept { cudaFreeHost(ptr); }};
     if (!mem) {
       return {wuffs_aux::DecodeImage_OutOfMemory};
     }
     wuffs_base__pixel_buffer pixbuf;
     wuffs_base__status status = pixbuf.set_from_slice(
         &image_config.pixcfg,
-        wuffs_base__make_slice_u8(mem.get(), (size_t) len));
+        wuffs_base__make_slice_u8(static_cast<uint8_t *>(mem.get()), (size_t) len));
     if (!status.is_ok()) {
       return {status.message()};
     }
-    wuffs_aux::MemOwner owner {mem.release(), operator delete[]};
-    return {std::move(owner), pixbuf};
+    return {std::move(mem), pixbuf};
   }
 
   std::string  //
@@ -249,11 +251,12 @@ load_image(Work::input_t file, bool ignore_alpha) {
     }
   }
 
-  md_view<uint8_t, int32_t, 3> in_view{reinterpret_cast<uint8_t *>(res.pixbuf_mem_owner.get()),
+  md_view in_view{static_cast<uint8_t *>(res.pixbuf_mem_owner.get()),
                   {static_cast<int>(res.pixbuf.pixcfg.height()),
                    static_cast<int>(res.pixbuf.pixcfg.width()),
                    res.pixbuf.pixcfg.pixel_format().transparency() ? 4 : 3}};
 
-  std::unique_ptr<uint8_t[]> in_ptr(reinterpret_cast<uint8_t*>(res.pixbuf_mem_owner.release()));
-  return std::make_pair(in_view.shape, std::move(in_ptr));
+  mem_owner owner;
+  owner.reset(static_cast<uint8_t*>(res.pixbuf_mem_owner.release()));
+  return std::make_pair(in_view.shape, std::move(owner));
 }

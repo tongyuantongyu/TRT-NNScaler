@@ -6,6 +6,8 @@
 
 #include "NvInfer.h"
 
+#include "md_view.h"
+
 struct optimization_axis {
   optimization_axis(int32_t min, int32_t opt, int32_t max) : min(min), opt(opt), max(max) {}
   optimization_axis(int32_t same) : min(same), opt(same), max(same) {}
@@ -24,6 +26,7 @@ struct ScalerConfig {
   optimization_axis batch;
 
   int32_t aux_stream;
+  bool use_strong_type;
   bool use_fp16;
   bool use_int8;
   bool force_precision;
@@ -33,11 +36,15 @@ struct ScalerConfig {
   [[nodiscard]] std::string engine_name() const {
     std::stringstream ss;
     ss << "_w" << input_width << "_h" << input_height << "_b" << batch << "_a" << aux_stream;
-    if (use_fp16) {
-      ss << "_fp16";
-    }
-    if (use_int8) {
-      ss << "_int8";
+    if (use_strong_type) {
+      ss << "_stype";
+    } else {
+      if (use_fp16) {
+        ss << "_fp16";
+      }
+      if (use_int8) {
+        ss << "_int8";
+      }
     }
     if (force_precision) {
       ss << "_force_prec";
@@ -87,7 +94,7 @@ class InferenceContext {
  public:
   ScalerConfig config;
   InferenceContext(ScalerConfig config, nvinfer1::ILogger &logger, const std::filesystem::path& path_prefix);
-  bool has_file();
+  bool has_file() const;
   std::string load_engine();
 
   bool good() {
@@ -99,14 +106,17 @@ class InferenceSession {
   InferenceContext ctx;
 
   nvinfer1::IExecutionContext *context;
-  void *execution_memory;
-  int32_t last_batch, last_height, last_width;
+  void *execution_memory{};
+  int32_t last_batch=-1, last_height=-1, last_width=-1;
   std::atomic<bool> good_;
+  void *input_ptr{}, *output_ptr{};
+  bool input_interleaved{}, output_interleaved{};
+  int32_t input_channel_stride{}, output_channel_stride{};
 
  public:
-  cudaStream_t stream;
-  cudaEvent_t input_consumed;
-  void *input, *output;
+  cudaStream_t stream{};
+  cudaEvent_t input_consumed{};
+  int32_t scale_w=-1, scale_h=-1;
 
   explicit InferenceSession(InferenceContext &ctx);
   ~InferenceSession();
@@ -117,7 +127,37 @@ class InferenceSession {
   std::string allocation();
   std::string deallocation();
   void config(int32_t batch, int32_t height, int32_t width);
-  std::pair<int32_t, int32_t> detect_scale();
+  void detect_scale();
 
-  bool inference();
+  bool inference() const;
+
+  template<typename F>
+  md_uview<F, int32_t, 3, int64_t> input(int32_t height, int32_t width) const {
+    shape_t shape {3, height, width};
+
+    shape_t stride_shape {input_channel_stride, height, width};
+    if (input_interleaved) {
+      stride_shape = stride_shape.gather<1, 2, 0>();
+    }
+    stride_t stride = stride_shape.stride<int64_t>();
+    if (input_interleaved) {
+      stride = stride.gather<2, 0, 1>();
+    }
+    return {static_cast<F *>(input_ptr), shape, stride};
+  }
+
+  template<typename F>
+  md_uview<F, int32_t, 3, int64_t> output(int32_t height, int32_t width) const {
+    shape_t shape {3, height * scale_h, width * scale_h};
+
+    shape_t stride_shape {output_channel_stride, height * scale_h, width * scale_h};
+    if (output_interleaved) {
+      stride_shape = stride_shape.gather<1, 2, 0>();
+    }
+    stride_t stride = stride_shape.stride<int64_t>();
+    if (output_interleaved) {
+      stride = stride.gather<2, 0, 1>();
+    }
+    return {static_cast<F *>(output_ptr), shape, stride};
+  }
 };
