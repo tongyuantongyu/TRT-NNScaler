@@ -33,75 +33,17 @@ else()
     option(USE_WUFFS_LIBJPEG_READER "Use Wuffs and libjpeg to read images" ON)
 endif()
 
-include(FetchContent)
-set(FETCHCONTENT_QUIET OFF)
-
-FetchContent_Declare(
-        fpng
-        GIT_REPOSITORY https://github.com/richgel999/fpng
-        GIT_TAG        357d3a6b73c769e190dafa254895be8e958cfd13
-        GIT_PROGRESS   TRUE
-)
-
-FetchContent_Declare(
-        wuffs
-        GIT_REPOSITORY https://github.com/google/wuffs-mirror-release-c
-        GIT_TAG v0.3.3
-        GIT_PROGRESS   TRUE
-)
-
-FetchContent_Declare(
-        abseil
-        GIT_REPOSITORY https://github.com/abseil/abseil-cpp
-        GIT_TAG 20240722.0
-        GIT_SHALLOW    TRUE
-        GIT_PROGRESS   TRUE
-        OVERRIDE_FIND_PACKAGE
-)
-
-FetchContent_Declare(
-        grpc
-        GIT_REPOSITORY https://github.com/grpc/grpc
-        GIT_TAG v1.66.1
-        GIT_SHALLOW    TRUE
-        GIT_PROGRESS   TRUE
-        GIT_SUBMODULES "third_party/boringssl-with-bazel;third_party/cares/cares;third_party/re2;third_party/zlib;third_party/envoy-api;third_party/googleapis;third_party/opencensus-proto;third_party/xds;third_party/protobuf"
-)
-
-option(LIBYUV_USE_GITHUB_MIRROR "Use an UNOFFICIAL mirror for libyuv" OFF)
-
-if (LIBYUV_USE_GITHUB_MIRROR)
-    set(LIBYUV_GIT_REPOSITORY "https://github.com/lemenkov/libyuv")
-else ()
-    set(LIBYUV_GIT_REPOSITORY "https://chromium.googlesource.com/libyuv/libyuv")
-endif ()
-FetchContent_Declare(
-        libyuv
-        GIT_REPOSITORY ${LIBYUV_GIT_REPOSITORY}
-        GIT_TAG 0d5a31eccb71d2745f0b5f231909f221743b0a5b
-        GIT_PROGRESS   TRUE
-)
-
-FetchContent_GetProperties(fpng)
-if(NOT fpng_POPULATED)
-    FetchContent_Populate(fpng)
-endif()
-
-add_library(image_fpng STATIC ${fpng_SOURCE_DIR}/src/fpng.h ${fpng_SOURCE_DIR}/src/fpng.cpp)
+add_library(image_fpng STATIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fpng/src/fpng.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fpng/src/fpng.cpp)
 target_compile_definitions(image_fpng PUBLIC FPNG_NO_STDIO)
 target_compile_options(image_fpng PRIVATE -msse4.1 -mpclmul -fno-strict-aliasing)
-target_include_directories(image_fpng INTERFACE ${fpng_SOURCE_DIR}/src)
+target_include_directories(image_fpng INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fpng/src)
 target_link_libraries(image_fpng PRIVATE CCCL::CCCL)
 
 if(USE_WUFFS_LIBJPEG_READER)
-    FetchContent_GetProperties(wuffs)
-    if(NOT wuffs_POPULATED)
-        FetchContent_Populate(wuffs)
-    endif()
-
     add_library(image_wuffs OBJECT image_io.h image_wuffs.cpp)
-
-    target_include_directories(image_wuffs PRIVATE ${wuffs_SOURCE_DIR}/release/c)
+    target_include_directories(image_wuffs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/wuffs/release/c)
 
     find_package(PkgConfig)
     pkg_check_modules(JPEG REQUIRED IMPORTED_TARGET libjpeg)
@@ -114,12 +56,7 @@ if (LOCAL_DEPENDENCIES)
 
     if (WITH_RPC_SERVICE)
         set(ABSL_PROPAGATE_CXX_STD 1)
-
-        FetchContent_GetProperties(abseil)
-        if (NOT abseil_POPULATED)
-            FetchContent_Populate(abseil)
-            add_subdirectory(${abseil_SOURCE_DIR} ${abseil_BINARY_DIR} EXCLUDE_FROM_ALL)
-        endif ()
+        add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third_party/abseil EXCLUDE_FROM_ALL SYSTEM)
 
         set(protobuf_INSTALL OFF)
         set(protobuf_BUILD_TESTS OFF)
@@ -145,13 +82,9 @@ if (LOCAL_DEPENDENCIES)
         set(gRPC_ABSL_PROVIDER "package")
         set(gRPC_ZLIB_PROVIDER "module")
 
-        FetchContent_GetProperties(grpc)
-        if (NOT grpc_POPULATED)
-            FetchContent_Populate(grpc)
-            add_subdirectory(${grpc_SOURCE_DIR} ${grpc_BINARY_DIR} EXCLUDE_FROM_ALL)
-            # Have totally no idea why I need to do this.
-            include(${grpc_SOURCE_DIR}/third_party/protobuf/cmake/protobuf-generate.cmake)
-        endif ()
+        add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third_party/grpc EXCLUDE_FROM_ALL SYSTEM)
+        # Have totally no idea why I need to do this.
+        include(${grpc_SOURCE_DIR}/third_party/protobuf/cmake/protobuf-generate.cmake)
         if (NOT TARGET gRPC::grpc++)
             add_library(gRPC::grpc++ ALIAS grpc++)
         endif ()
@@ -160,11 +93,7 @@ if (LOCAL_DEPENDENCIES)
         endif ()
     endif()
 
-    FetchContent_GetProperties(libyuv)
-    if(NOT libyuv_POPULATED)
-        FetchContent_Populate(libyuv)
-        add_subdirectory(${libyuv_SOURCE_DIR} ${libyuv_BINARY_DIR} EXCLUDE_FROM_ALL)
-    endif()
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third_party/libyuv EXCLUDE_FROM_ALL SYSTEM)
 else()
     if (WITH_RPC_SERVICE)
         find_package(absl REQUIRED)
@@ -173,7 +102,7 @@ else()
     find_package(libyuv REQUIRED)
 endif()
 
-find_package(CUDAToolkit 12.0 REQUIRED)
+find_package(CUDAToolkit 12.0 REQUIRED COMPONENTS cudart)
 find_package(TensorRT 8.6.0 REQUIRED COMPONENTS OnnxParser)
 find_package(CCCL 2 REQUIRED)
 
@@ -223,7 +152,9 @@ target_link_libraries(cmd_common PUBLIC
         absl::log_flags
         absl::log_initialize
 )
-target_include_directories(cmd_common PRIVATE ${libyuv_SOURCE_DIR}/include)
+if (LOCAL_DEPENDENCIES)
+    target_include_directories(cmd_common PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libyuv/include)
+endif()
 
 if (TensorRT_VERSION_STRING VERSION_LESS 9.0)
     add_library(trt_plugins STATIC

@@ -1,0 +1,18 @@
+[submodule "third_party/--force"]
+	path = third_party/--force
+	url = https://github.com/richgel999/fpng
+[submodule "third_party/fpng"]
+	path = third_party/fpng
+	url = https://github.com/richgel999/fpng
+[submodule "third_party/wuffs"]
+	path = third_party/wuffs
+	url = https://github.com/google/wuffs-mirror-release-c
+[submodule "third_party/abseil"]
+	path = third_party/abseil
+	url = https://github.com/abseil/abseil-cpp
+[submodule "third_party/grpc"]
+	path = third_party/grpc
+	url = https://github.com/grpc/grpc
+[submodule "third_party/libyuv"]
+	path = third_party/libyuv
+	url = https://chromium.googlesource.com/libyuv/libyuv
